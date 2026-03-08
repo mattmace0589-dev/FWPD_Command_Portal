@@ -168,13 +168,23 @@ function mapRosterRecords(records) {
       'division', 'unit', 'departmentdivision'
     ]) || String(values[9] || '').trim();
 
-    return {
+    let mapped = {
       ID: id,
       Name: name,
       Callsign: callsign,
       Rank: rank,
       Division: division
     };
+
+    // Heuristic fix: some sheets place Name where Callsign would be.
+    // If Name is blank but Callsign has text and Rank/Division look valid,
+    // treat Callsign as Name and leave Callsign empty.
+    if (!mapped.Name && mapped.Callsign && mapped.Rank) {
+      mapped.Name = mapped.Callsign;
+      mapped.Callsign = '';
+    }
+
+    return mapped;
   }).filter(x => {
     return String(x.ID).trim() !== '' ||
       String(x.Name).trim() !== '' ||
