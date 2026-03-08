@@ -6,7 +6,7 @@ const AUTH_TOKEN_KEY = 'fwpd_auth_token';
 const DISCIPLINE_SOURCE_URL_KEY = 'fwpd_discipline_source_url';
 const EVALUATION_SOURCE_URL_KEY = 'fwpd_evaluation_source_url';
 const DEFAULT_EVALUATION_SOURCE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR6_40O35zd-9GMo_nTg5KS76Svzt1P8ZKrfBQwPAtLloGFtpE1r4JBP3t-F-meLlDKCpvWzZkhMlOb/pub?output=csv&gid=1513386776';
-const APP_BUILD = '20260308z7';
+const APP_BUILD = '20260308z8';
 const MESSAGE_POLL_MS = 45000;
 
 let currentUser = null;
@@ -649,6 +649,7 @@ document.getElementById("content").innerHTML = `
 <th>Callsign</th>
 <th>Rank</th>
 <th>Division</th>
+<th>Notes</th>
 <th>Actions</th>
 </tr>
 </thead>
@@ -714,6 +715,7 @@ async function loadRoster(){
       let callsign = pick(item, ['Callsign', 'callsign', 'Call_Sign', 'call_sign']);
       const rank = pick(item, ['Rank', 'rank']);
       const division = pick(item, ['Division', 'division', 'Unit', 'unit']);
+      const notes = pick(item, ['Notes', 'notes', 'Officer_Notes', 'officer_notes', 'Comments', 'comments']);
 
       if (!name && callsign && /[a-z]/i.test(callsign) && !/\d/.test(callsign)) {
         name = callsign;
@@ -749,6 +751,7 @@ async function loadRoster(){
         <td>${callsign}</td>
         <td>${rank}</td>
         <td>${division}</td>
+        <td title="${escapeHtml(notes || '')}">${escapeHtml(notes || '-')}</td>
         <td class="actions-cell">
           <div class="row-actions">
             ${actionButtons}
@@ -980,7 +983,7 @@ async function editOfficer(id) {
   try {
     const response = await fetch(`/api/roster?id=${id}`);
     const data = await response.json();
-    const item = data.find(x => x.ID === id);
+    const item = data.find(x => String((x && x.ID) || '') === String(id));
     if (item) {
       showOfficerForm(id, item);
     } else {
