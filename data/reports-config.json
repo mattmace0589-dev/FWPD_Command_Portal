@@ -1,0 +1,9 @@
+{
+  "disciplineTabNames": [
+    "discipline_records",
+    "disciplinary_forms"
+  ],
+  "evaluationTabNames": [
+    "cadet_evaluations"
+  ]
+}

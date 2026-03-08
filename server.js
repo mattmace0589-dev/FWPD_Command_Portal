@@ -19,6 +19,17 @@ const CSV_FILE = path.join(__dirname, 'roster.csv');
 const SHEETS_CONFIG_FILE = path.join(DATA_DIR, 'sheets-config.json');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const SESSIONS_FILE = path.join(DATA_DIR, 'sessions.json');
+const REPORT_APPROVALS_FILE = path.join(DATA_DIR, 'report_approvals.json');
+const REPORTS_CONFIG_FILE = path.join(DATA_DIR, 'reports-config.json');
+const INTERNAL_MESSAGES_FILE = path.join(DATA_DIR, 'internal_mailbox.json');
+const INTERNAL_DATA_FILES = new Set([
+  'sheets-config.json',
+  'reports-config.json',
+  'users.json',
+  'sessions.json',
+  'report_approvals.json',
+  'internal_mailbox.json'
+]);
 
 function parseCSV(text) {
   const rows = [];
@@ -282,8 +293,179 @@ function saveJsonFile(filePath, data) {
   fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
 }
 
+function loadReportsConfig() {
+  return loadJsonFile(REPORTS_CONFIG_FILE, {
+    disciplineTabNames: ['discipline_records', 'disciplinary_forms'],
+    evaluationTabNames: ['cadet_evaluations']
+  });
+}
+
+function saveReportsConfig(config) {
+  const defaults = {
+    disciplineTabNames: ['discipline_records', 'disciplinary_forms'],
+    evaluationTabNames: ['cadet_evaluations']
+  };
+  const incoming = Object.assign({}, defaults, config || {});
+  incoming.disciplineTabNames = Array.isArray(incoming.disciplineTabNames)
+    ? Array.from(new Set(incoming.disciplineTabNames.map(sanitizeName).filter(Boolean)))
+    : defaults.disciplineTabNames;
+  incoming.evaluationTabNames = Array.isArray(incoming.evaluationTabNames)
+    ? Array.from(new Set(incoming.evaluationTabNames.map(sanitizeName).filter(Boolean)))
+    : defaults.evaluationTabNames;
+  saveJsonFile(REPORTS_CONFIG_FILE, incoming);
+  return incoming;
+}
+
+function loadReportApprovals() {
+  return loadJsonFile(REPORT_APPROVALS_FILE, []);
+}
+
+function saveReportApprovals(items) {
+  saveJsonFile(REPORT_APPROVALS_FILE, Array.isArray(items) ? items : []);
+}
+
+function loadInternalMessages() {
+  return loadJsonFile(INTERNAL_MESSAGES_FILE, []);
+}
+
+function saveInternalMessages(items) {
+  saveJsonFile(INTERNAL_MESSAGES_FILE, Array.isArray(items) ? items : []);
+}
+
+function readTabRecords(tabName) {
+  const safe = sanitizeName(tabName);
+  const filePath = path.join(DATA_DIR, safe + '.json');
+  if (!fs.existsSync(filePath)) return [];
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8') || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function listImportedTabNames() {
+  ensureDataDir();
+  return fs.readdirSync(DATA_DIR)
+    .filter(f => f.endsWith('.json'))
+    .filter(f => !INTERNAL_DATA_FILES.has(f))
+    .map(f => f.replace(/\.json$/, ''));
+}
+
+function getFieldByAliases(row, aliases) {
+  const keys = Object.keys(row || {});
+  for (const alias of aliases) {
+    const wanted = normalizeKey(alias);
+    const found = keys.find(k => normalizeKey(k) === wanted);
+    if (!found) continue;
+    const value = String(row[found] || '').trim();
+    if (value) return value;
+  }
+  return '';
+}
+
+function stableHash(value) {
+  return crypto.createHash('sha1').update(String(value || '')).digest('hex');
+}
+
+function buildReportFingerprint(row, fallbackType) {
+  const officer = getFieldByAliases(row, ['officer_name', 'name', 'rp_name', 'cadet_name', 'character_name']);
+  const date = getFieldByAliases(row, ['date', 'incident_date', 'created_date', 'timestamp', 'submitted_at']);
+  const title = getFieldByAliases(row, ['title', 'reason', 'subject', 'violation', 'report_type']);
+  const details = getFieldByAliases(row, ['notes', 'description', 'summary', 'comments', 'details']);
+  const typeHint = getFieldByAliases(row, ['type', 'category', 'status']) || fallbackType;
+  return [officer, date, title, typeHint, details.slice(0, 180)].join('|');
+}
+
+function classifyReportType(tabName, reportsConfig) {
+  const safe = sanitizeName(tabName);
+  const discipline = (reportsConfig.disciplineTabNames || []).map(sanitizeName);
+  const evaluation = (reportsConfig.evaluationTabNames || []).map(sanitizeName);
+  if (discipline.includes(safe)) return 'discipline';
+  if (evaluation.includes(safe)) return 'evaluation';
+  if (safe.includes('disciplin') || safe.includes('violation')) return 'discipline';
+  if (safe.includes('eval') || safe.includes('evaluation')) return 'evaluation';
+  if (safe === 'officer_notes' || safe === 'internal_messages') return 'message';
+  if (safe.includes('message') || safe.includes('note')) return 'message';
+  return 'other';
+}
+
+function buildReportItems() {
+  const reportsConfig = loadReportsConfig();
+  const configuredTabs = Array.from(new Set(
+    []
+      .concat(reportsConfig.disciplineTabNames || [])
+      .concat(reportsConfig.evaluationTabNames || [])
+      .concat(['officer_notes', 'internal_messages'])
+      .map(sanitizeName)
+      .filter(Boolean)
+  ));
+  const discoveredTabs = listImportedTabNames().filter((tabName) => {
+    const kind = classifyReportType(tabName, reportsConfig);
+    return kind === 'discipline' || kind === 'evaluation' || kind === 'message';
+  });
+  const activeTabs = Array.from(new Set(configuredTabs.concat(discoveredTabs)));
+  const approvals = loadReportApprovals();
+  const approvalById = new Map(approvals.map(a => [String(a && a.id || ''), a]));
+
+  const items = [];
+  activeTabs.forEach((tabName) => {
+    const rows = readTabRecords(tabName);
+    const reportType = classifyReportType(tabName, reportsConfig);
+
+    rows.forEach((row, idx) => {
+      const fingerprint = buildReportFingerprint(row, reportType) || (tabName + '|' + idx);
+      const id = stableHash(tabName + '|' + fingerprint);
+      const approval = approvalById.get(id) || null;
+
+      items.push({
+        id,
+        index: idx,
+        sourceTab: tabName,
+        type: reportType,
+        subject: getFieldByAliases(row, ['title', 'subject', 'reason', 'violation', 'report_type']) || (reportType + ' report'),
+        officerName: getFieldByAliases(row, ['officer_name', 'name', 'rp_name', 'cadet_name', 'character_name']),
+        reportDate: getFieldByAliases(row, ['date', 'incident_date', 'created_date', 'timestamp', 'submitted_at']),
+        detail: getFieldByAliases(row, ['notes', 'description', 'summary', 'comments', 'details']),
+        approvalStatus: approval ? approval.status : 'pending',
+        approvedBy: approval ? approval.approvedBy : '',
+        approvedByEmail: approval ? approval.approvedByEmail : '',
+        approvedAt: approval ? approval.approvedAt : '',
+        rawRow: row
+      });
+    });
+  });
+
+  items.sort((a, b) => {
+    const ad = String(a.reportDate || '');
+    const bd = String(b.reportDate || '');
+    if (ad && bd) return bd.localeCompare(ad);
+    return a.sourceTab.localeCompare(b.sourceTab) || a.index - b.index;
+  });
+
+  return { items, reportsConfig, configuredTabs: activeTabs };
+}
+
 function normalizeEmail(email) {
   return String(email || '').trim().toLowerCase();
+}
+
+function formatUserDisplayName(user) {
+  const rank = String((user && user.rank) || '').trim();
+  const name = String((user && user.characterName) || '').trim();
+  if (rank && name) return rank + ' ' + name;
+  return name || rank || 'Officer';
+}
+
+function isPrivilegedRole(roleText) {
+  const role = String(roleText || '').trim().toLowerCase();
+  if (!role) return false;
+  if (role === 'command') return true;
+  if (role.includes('admin')) return true;
+  if (role.includes('chief')) return true;
+  if (role.includes('commander')) return true;
+  if (role.includes('supervisor')) return true;
+  return false;
 }
 
 function hashPassword(password) {
@@ -848,6 +1030,204 @@ app.post('/api/auth/logout', (req, res) => {
   }
 });
 
+app.post('/api/auth/change-password', requireAuth, (req, res) => {
+  try {
+    const oldPassword = String(req.body && req.body.oldPassword || '');
+    const newPassword = String(req.body && req.body.newPassword || '');
+    const confirmPassword = String(req.body && req.body.confirmPassword || '');
+
+    if (!oldPassword || !newPassword || !confirmPassword) {
+      return res.status(400).json({ error: 'Old password, new password, and confirm password are required.' });
+    }
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({ error: 'New password and confirm password do not match.' });
+    }
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: 'New password must be at least 6 characters.' });
+    }
+
+    const users = loadJsonFile(USERS_FILE, []);
+    const idx = users.findIndex(u => normalizeEmail(u && u.email) === normalizeEmail(req.auth.email));
+    if (idx < 0) return res.status(404).json({ error: 'User account not found.' });
+
+    const currentHash = hashPassword(oldPassword);
+    if (String(users[idx].passwordHash || '') !== currentHash) {
+      return res.status(401).json({ error: 'Old password is incorrect.' });
+    }
+
+    users[idx].passwordHash = hashPassword(newPassword);
+    users[idx].passwordUpdatedAt = new Date().toISOString();
+    saveJsonFile(USERS_FILE, users);
+
+    return res.json({ ok: true, message: 'Password updated successfully.' });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+app.post('/api/auth/admin-reset-password', requireAuth, (req, res) => {
+  try {
+    if (!isPrivilegedRole(req.auth && req.auth.role)) {
+      return res.status(403).json({ error: 'Admin reset requires elevated role.' });
+    }
+
+    const targetEmail = normalizeEmail(req.body && req.body.email);
+    const newPassword = String(req.body && req.body.newPassword || '');
+    if (!targetEmail || !newPassword) {
+      return res.status(400).json({ error: 'Target email and new password are required.' });
+    }
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: 'New password must be at least 6 characters.' });
+    }
+
+    const users = loadJsonFile(USERS_FILE, []);
+    const idx = users.findIndex(u => normalizeEmail(u && u.email) === targetEmail);
+    if (idx < 0) {
+      return res.status(404).json({ error: 'Target user account not found.' });
+    }
+
+    users[idx].passwordHash = hashPassword(newPassword);
+    users[idx].passwordUpdatedAt = new Date().toISOString();
+    users[idx].passwordResetBy = req.auth.email;
+    saveJsonFile(USERS_FILE, users);
+
+    return res.json({ ok: true, message: 'Password reset for ' + targetEmail + '.' });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+app.get('/api/messages/users', requireAuth, (req, res) => {
+  try {
+    const users = loadJsonFile(USERS_FILE, []);
+    const commandUsers = getCommandUsersRecords();
+
+    const fromCommand = commandUsers.map((row) => {
+      const email = normalizeEmail(pickField(row, [
+        'email', 'email_address', 'mail', 'google_email', 'google email', 'googleemail'
+      ]));
+      if (!email) return null;
+      const characterName = pickField(row, ['character_name', 'name_of_character', 'name of character', 'name_of_charac', 'name of charac', 'rp_name', 'name']);
+      const rank = pickField(row, ['rank', 'officer_rank']);
+      return {
+        email,
+        displayName: (rank && characterName) ? (rank + ' ' + characterName) : (characterName || email)
+      };
+    }).filter(Boolean);
+
+    const fromUsers = users.map((u) => {
+      const email = normalizeEmail(u && u.email);
+      if (!email) return null;
+      const profile = findCommandUserByEmailFromRecords(email, commandUsers);
+      const name = profile ? formatUserDisplayName(profile) : email;
+      return { email, displayName: name };
+    }).filter(Boolean);
+
+    const merged = Array.from(new Map(fromCommand.concat(fromUsers).map(x => [x.email, x])).values())
+      .filter(x => x.email !== normalizeEmail(req.auth.email))
+      .sort((a, b) => a.displayName.localeCompare(b.displayName));
+
+    res.json({ ok: true, users: merged });
+  } catch (err) {
+    res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+app.get('/api/messages/unread-count', requireAuth, (req, res) => {
+  try {
+    const email = normalizeEmail(req.auth.email);
+    const all = loadInternalMessages();
+    const unread = all.filter(m => normalizeEmail(m && m.toEmail) === email && !m.readAt).length;
+    res.json({ ok: true, unread });
+  } catch (err) {
+    res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+app.get('/api/messages/inbox', requireAuth, (req, res) => {
+  try {
+    const email = normalizeEmail(req.auth.email);
+    const unreadOnly = String(req.query.unreadOnly || '').trim().toLowerCase() === 'true';
+    const limit = Math.max(1, Math.min(250, Number(req.query.limit || 100)));
+    let rows = loadInternalMessages().filter(m => normalizeEmail(m && m.toEmail) === email);
+    if (unreadOnly) rows = rows.filter(m => !m.readAt);
+    rows.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+    res.json({ ok: true, items: rows.slice(0, limit) });
+  } catch (err) {
+    res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+app.get('/api/messages/sent', requireAuth, (req, res) => {
+  try {
+    const email = normalizeEmail(req.auth.email);
+    const limit = Math.max(1, Math.min(250, Number(req.query.limit || 100)));
+    const rows = loadInternalMessages()
+      .filter(m => normalizeEmail(m && m.fromEmail) === email)
+      .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+      .slice(0, limit);
+    res.json({ ok: true, items: rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+app.post('/api/messages/send', requireAuth, (req, res) => {
+  try {
+    const toEmail = normalizeEmail(req.body && req.body.toEmail);
+    const subject = String(req.body && req.body.subject || '').trim();
+    const body = String(req.body && req.body.body || '').trim();
+
+    if (!toEmail) return res.status(400).json({ error: 'Recipient email is required.' });
+    if (!subject && !body) return res.status(400).json({ error: 'Message subject or body is required.' });
+
+    const fromEmail = normalizeEmail(req.auth.email);
+    if (toEmail === fromEmail) return res.status(400).json({ error: 'Cannot send a message to yourself.' });
+
+    const directory = getCommandUsersRecords();
+    const recipientProfile = findCommandUserByEmailFromRecords(toEmail, directory);
+    if (!recipientProfile) return res.status(404).json({ error: 'Recipient is not in Command_Users.' });
+
+    const senderProfile = findCommandUserByEmailFromRecords(fromEmail, directory) || req.auth;
+    const createdAt = new Date().toISOString();
+    const message = {
+      id: 'msg_' + Date.now() + '_' + crypto.randomBytes(5).toString('hex'),
+      fromEmail,
+      fromName: formatUserDisplayName(senderProfile),
+      toEmail,
+      toName: formatUserDisplayName(recipientProfile),
+      subject: subject || '(No Subject)',
+      body,
+      createdAt,
+      readAt: ''
+    };
+
+    const all = loadInternalMessages();
+    all.push(message);
+    saveInternalMessages(all);
+    res.status(201).json({ ok: true, item: message });
+  } catch (err) {
+    res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+app.post('/api/messages/:id/read', requireAuth, (req, res) => {
+  try {
+    const id = String(req.params.id || '').trim();
+    const markRead = !!(req.body && req.body.read);
+    const email = normalizeEmail(req.auth.email);
+    const all = loadInternalMessages();
+    const idx = all.findIndex(m => String(m && m.id || '') === id && normalizeEmail(m && m.toEmail) === email);
+    if (idx < 0) return res.status(404).json({ error: 'Message not found in your inbox.' });
+
+    all[idx].readAt = markRead ? new Date().toISOString() : '';
+    saveInternalMessages(all);
+    res.json({ ok: true, item: all[idx] });
+  } catch (err) {
+    res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
 // API: list roster
 app.get('/api/roster', (req,res)=>{
   const data = loadJson();
@@ -966,7 +1346,7 @@ app.get('/api/sheets/tabs', (req, res) => {
   ensureDataDir();
   const files = fs.readdirSync(DATA_DIR)
     .filter(f => f.endsWith('.json'))
-    .filter(f => f !== 'sheets-config.json')
+    .filter(f => !INTERNAL_DATA_FILES.has(f))
     .map(f => f.replace(/\.json$/, ''));
   res.json(files);
 });
@@ -980,6 +1360,182 @@ app.get('/api/sheets/tab/:name', (req, res) => {
   try {
     const data = JSON.parse(fs.readFileSync(filePath, 'utf8') || '[]');
     res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+app.get('/api/reports/config', requireAuth, (req, res) => {
+  const config = loadReportsConfig();
+  res.json(config);
+});
+
+app.put('/api/reports/config', requireAuth, (req, res) => {
+  try {
+    const updated = saveReportsConfig(req.body || {});
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+app.post('/api/reports/link-disciplinary-source', requireAuth, async (req, res) => {
+  try {
+    const url = String(req.body && req.body.url || '').trim();
+    const tabName = sanitizeName((req.body && req.body.tabName) || 'disciplinary_forms');
+    if (!url) return res.status(400).json({ error: 'Disciplinary source URL is required.' });
+
+    const sheetsConfig = loadSheetsConfig();
+    const tabs = Array.isArray(sheetsConfig.tabs) ? sheetsConfig.tabs.slice() : [];
+    const existingIdx = tabs.findIndex(t => sanitizeName(t && t.name) === tabName);
+    if (existingIdx >= 0) tabs[existingIdx] = { name: tabName, url };
+    else tabs.push({ name: tabName, url });
+
+    saveSheetsConfig({
+      tabs,
+      autoSyncOnLoad: sheetsConfig.autoSyncOnLoad,
+      lastSync: sheetsConfig.lastSync
+    });
+
+    const reportsConfig = loadReportsConfig();
+    const updatedReports = saveReportsConfig({
+      disciplineTabNames: Array.from(new Set([].concat(reportsConfig.disciplineTabNames || [], [tabName]))),
+      evaluationTabNames: reportsConfig.evaluationTabNames || ['cadet_evaluations']
+    });
+
+    const imported = await importSheetsTabs([{ name: tabName, url }]);
+    res.json({ ok: imported.ok, tabName, import: imported, reportsConfig: updatedReports });
+  } catch (err) {
+    res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+app.post('/api/reports/link-evaluation-source', requireAuth, async (req, res) => {
+  try {
+    const url = String(req.body && req.body.url || '').trim();
+    const tabName = sanitizeName((req.body && req.body.tabName) || 'cadet_evaluations');
+    if (!url) return res.status(400).json({ error: 'Cadet evaluations source URL is required.' });
+
+    const sheetsConfig = loadSheetsConfig();
+    const tabs = Array.isArray(sheetsConfig.tabs) ? sheetsConfig.tabs.slice() : [];
+    const existingIdx = tabs.findIndex(t => sanitizeName(t && t.name) === tabName);
+    if (existingIdx >= 0) tabs[existingIdx] = { name: tabName, url };
+    else tabs.push({ name: tabName, url });
+
+    saveSheetsConfig({
+      tabs,
+      autoSyncOnLoad: sheetsConfig.autoSyncOnLoad,
+      lastSync: sheetsConfig.lastSync
+    });
+
+    const reportsConfig = loadReportsConfig();
+    const updatedReports = saveReportsConfig({
+      disciplineTabNames: reportsConfig.disciplineTabNames || ['discipline_records', 'disciplinary_forms'],
+      evaluationTabNames: Array.from(new Set([].concat(reportsConfig.evaluationTabNames || [], [tabName])))
+    });
+
+    const imported = await importSheetsTabs([{ name: tabName, url }]);
+    res.json({ ok: imported.ok, tabName, import: imported, reportsConfig: updatedReports });
+  } catch (err) {
+    res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+app.get('/api/reports/items', requireAuth, (req, res) => {
+  try {
+    const reportType = sanitizeName(req.query.type || 'all');
+    const approvalStatus = sanitizeName(req.query.status || 'all');
+    const built = buildReportItems();
+    let items = built.items;
+
+    if (reportType !== 'all') {
+      items = items.filter(i => sanitizeName(i.type) === reportType);
+    }
+    if (approvalStatus !== 'all') {
+      items = items.filter(i => sanitizeName(i.approvalStatus) === approvalStatus);
+    }
+
+    res.json({
+      ok: true,
+      items,
+      configuredTabs: built.configuredTabs,
+      reportsConfig: built.reportsConfig
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+app.get('/api/reports/summary', requireAuth, (req, res) => {
+  try {
+    const built = buildReportItems();
+    const summarize = (type) => {
+      const rows = built.items.filter(i => i.type === type);
+      return {
+        total: rows.length,
+        pending: rows.filter(r => r.approvalStatus === 'pending').length,
+        approved: rows.filter(r => r.approvalStatus === 'approved').length,
+        denied: rows.filter(r => r.approvalStatus === 'denied').length
+      };
+    };
+
+    const summary = {
+      discipline: summarize('discipline'),
+      evaluation: summarize('evaluation'),
+      message: summarize('message'),
+      other: summarize('other')
+    };
+
+    res.json({
+      ok: true,
+      summary,
+      configuredTabs: built.configuredTabs,
+      reportsConfig: built.reportsConfig
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+app.post('/api/reports/:id/approval', requireAuth, (req, res) => {
+  try {
+    const id = String(req.params.id || '').trim();
+    const status = sanitizeName(req.body && req.body.status);
+    if (!id) return res.status(400).json({ error: 'Report id is required.' });
+    if (!['approved', 'denied', 'pending'].includes(status)) {
+      return res.status(400).json({ error: 'Status must be approved, denied, or pending.' });
+    }
+
+    const built = buildReportItems();
+    const item = built.items.find(x => x.id === id);
+    if (!item) return res.status(404).json({ error: 'Report item not found.' });
+    if (!['discipline', 'evaluation'].includes(item.type)) {
+      return res.status(400).json({ error: 'Only discipline and evaluation reports require command approval.' });
+    }
+
+    const approvals = loadReportApprovals();
+    const idx = approvals.findIndex(a => String(a && a.id || '') === id);
+    const actorName = formatUserDisplayName(req.auth);
+    const approvedAt = new Date().toISOString();
+    const next = {
+      id,
+      type: item.type,
+      sourceTab: item.sourceTab,
+      status,
+      approvedBy: actorName,
+      approvedByEmail: req.auth.email,
+      approvedAt,
+      updatedAt: approvedAt
+    };
+
+    if (idx >= 0) {
+      approvals[idx] = Object.assign({}, approvals[idx], next);
+    } else {
+      approvals.push(Object.assign({}, next, { createdAt: approvedAt }));
+    }
+    saveReportApprovals(approvals);
+
+    res.json({ ok: true, approval: next });
   } catch (err) {
     res.status(500).json({ error: err.message || String(err) });
   }

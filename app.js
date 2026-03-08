@@ -3,15 +3,32 @@
 const AUTO_SYNC_SESSION_KEY = 'fwpd_auto_sync_done';
 const LOCAL_SYNC_TABS_KEY = 'fwpd_sync_tabs_v1';
 const AUTH_TOKEN_KEY = 'fwpd_auth_token';
-const APP_BUILD = '20260308t';
+const DISCIPLINE_SOURCE_URL_KEY = 'fwpd_discipline_source_url';
+const EVALUATION_SOURCE_URL_KEY = 'fwpd_evaluation_source_url';
+const DEFAULT_EVALUATION_SOURCE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR6_40O35zd-9GMo_nTg5KS76Svzt1P8ZKrfBQwPAtLloGFtpE1r4JBP3t-F-meLlDKCpvWzZkhMlOb/pub?output=csv&gid=1513386776';
+const APP_BUILD = '20260308z3';
+const MESSAGE_POLL_MS = 45000;
 
 let currentUser = null;
+let unreadMessageCount = 0;
+let messagePollTimer = null;
 
 function formatUserDisplayName(user) {
   const rank = String((user && user.rank) || '').trim();
   const name = String((user && user.characterName) || '').trim();
   if (rank && name) return rank + ' ' + name;
   return name || rank || 'Officer';
+}
+
+function isPrivilegedRoleClient(roleText) {
+  const role = String(roleText || '').trim().toLowerCase();
+  if (!role) return false;
+  if (role === 'command') return true;
+  if (role.includes('admin')) return true;
+  if (role.includes('chief')) return true;
+  if (role.includes('commander')) return true;
+  if (role.includes('supervisor')) return true;
+  return false;
 }
 
 function getAuthToken() {
@@ -51,11 +68,91 @@ function showAuthBanner() {
   banner.style.fontSize = '12px';
   banner.style.letterSpacing = '0';
   banner.style.marginTop = '6px';
-  banner.textContent = currentUser
-    ? ('Logged in as ' + formatUserDisplayName(currentUser))
-    : 'Not logged in';
+  if (currentUser) {
+    const unreadText = unreadMessageCount > 0 ? (' | Unread messages: ' + unreadMessageCount) : '';
+    banner.textContent = 'Logged in as ' + formatUserDisplayName(currentUser) + unreadText;
+  } else {
+    banner.textContent = 'Not logged in';
+  }
 
   title.appendChild(banner);
+}
+
+function applyRuntimeLayoutFixes() {
+  const sidebar = document.querySelector('.sidebar');
+  if (sidebar) {
+    const links = Array.from(sidebar.querySelectorAll('a'));
+    let messagesLink = null;
+    links.forEach((link) => {
+      const text = String(link.textContent || '').trim().toLowerCase();
+      if (text === 'sheet tabs') {
+        link.remove();
+      }
+      if (text.startsWith('messages')) {
+        messagesLink = link;
+      }
+    });
+
+    if (!messagesLink) {
+      const accountLink = links.find((link) => String(link.textContent || '').trim().toLowerCase() === 'account');
+      messagesLink = document.createElement('a');
+      messagesLink.setAttribute('href', "javascript:loadPage('messages')");
+      messagesLink.textContent = 'Messages';
+      if (accountLink) sidebar.insertBefore(messagesLink, accountLink);
+      else sidebar.appendChild(messagesLink);
+    }
+
+    const countText = unreadMessageCount > 0 ? ('Messages (' + unreadMessageCount + ')') : 'Messages';
+    messagesLink.textContent = countText;
+  }
+
+  const title = document.querySelector('.title');
+  if (title) {
+    let tag = document.getElementById('appBuildTag');
+    if (!tag) {
+      tag = document.createElement('div');
+      tag.id = 'appBuildTag';
+      tag.style.fontSize = '11px';
+      tag.style.opacity = '0.9';
+      tag.style.marginTop = '2px';
+      title.appendChild(tag);
+    }
+    tag.textContent = 'Build ' + APP_BUILD;
+  }
+}
+
+function stopMessagePolling() {
+  if (messagePollTimer) {
+    clearInterval(messagePollTimer);
+    messagePollTimer = null;
+  }
+}
+
+function startMessagePolling() {
+  stopMessagePolling();
+  messagePollTimer = setInterval(() => {
+    if (!isLoggedIn()) return;
+    loadUnreadMessageCount();
+  }, MESSAGE_POLL_MS);
+}
+
+async function loadUnreadMessageCount() {
+  if (!isLoggedIn()) {
+    unreadMessageCount = 0;
+    applyRuntimeLayoutFixes();
+    showAuthBanner();
+    return;
+  }
+  try {
+    const response = await authFetch('/api/messages/unread-count');
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Failed unread count');
+    unreadMessageCount = Number(data.unread || 0);
+  } catch (e) {
+    unreadMessageCount = 0;
+  }
+  applyRuntimeLayoutFixes();
+  showAuthBanner();
 }
 
 function setAuthLockedLayout(locked) {
@@ -148,6 +245,7 @@ async function linkCommandUsersTab() {
 }
 
 async function refreshAuthSession() {
+  applyRuntimeLayoutFixes();
   const token = getAuthToken();
   if (!token) {
     currentUser = null;
@@ -170,9 +268,14 @@ async function refreshAuthSession() {
   }
   showAuthBanner();
   if (!currentUser) {
+    stopMessagePolling();
+    unreadMessageCount = 0;
     renderLoginScreen();
     return;
   }
+
+  await loadUnreadMessageCount();
+  startMessagePolling();
 
   // On initial authenticated load, land on dashboard.
   const content = document.getElementById('content');
@@ -202,6 +305,7 @@ function setLocalSyncTabs(tabs) {
 }
 
 function loadPage(page){
+applyRuntimeLayoutFixes();
 if(!isLoggedIn()){
 renderLoginScreen();
 return;
@@ -225,17 +329,6 @@ document.getElementById("content").innerHTML = `
 <div style="margin-top:20px">
 <b>Alerts</b>
 <pre id="dashboardAlerts" style="margin-top:8px;white-space:pre-wrap;background:rgba(0,0,0,.2);padding:10px;border:1px solid rgba(255,255,255,.2)">Loading alerts...</pre>
-</div>
-
-<div style="margin-top:30px">
-
-<b>Department Structure</b>
-
-<ul>
-<li>Divisions: Adam, Nora</li>
-<li>Subdivisions assigned through command qualification</li>
-</ul>
-
 </div>
 
 <div style="margin-top:24px">
@@ -267,13 +360,194 @@ document.getElementById("content").innerHTML = `
 <p>Command review center for discipline, cadet evaluations, and internal messages.</p>
 
 <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;">
-  <button onclick="loadPage('sheettabs')">Open Sheet Tabs</button>
+  <button id="showAllReportsBtn">All Reports</button>
+  <button id="showDisciplineReportsBtn">Discipline Queue</button>
+  <button id="showEvaluationReportsBtn">Evaluation Queue</button>
+  <button id="showMessageReportsBtn">Internal Messages</button>
+</div>
+
+<div style="margin-top:14px;border:1px solid rgba(255,255,255,.2);padding:10px;background:rgba(0,0,0,.15)">
+  <b>Link Disciplinary Form Database</b>
+  <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+    <input id="disciplineTabName" type="text" value="disciplinary_forms" style="max-width:220px" placeholder="tab name">
+    <input id="disciplineSourceUrl" type="text" style="min-width:260px;flex:1" placeholder="Paste separate disciplinary Google Sheet/CSV link">
+    <button id="linkDisciplineSourceBtn">Link Source</button>
+  </div>
+</div>
+
+<div style="margin-top:10px;border:1px solid rgba(255,255,255,.2);padding:10px;background:rgba(0,0,0,.15)">
+  <b>Link Cadet Evaluations Database</b>
+  <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+    <input id="evaluationTabName" type="text" value="cadet_evaluations" style="max-width:220px" placeholder="tab name">
+    <input id="evaluationSourceUrl" type="text" style="min-width:260px;flex:1" placeholder="Paste cadet evaluations Google Sheet/CSV link">
+    <button id="linkEvaluationSourceBtn">Link Source</button>
+  </div>
 </div>
 
 <pre id="reportsSummary" style="margin-top:14px;white-space:pre-wrap;background:rgba(0,0,0,.2);padding:10px;border:1px solid rgba(255,255,255,.2)">Loading reports summary...</pre>
+
+<div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+  <label>Type</label>
+  <select id="reportTypeFilter">
+    <option value="all">All</option>
+    <option value="discipline">Discipline</option>
+    <option value="evaluation">Evaluation</option>
+    <option value="message">Messages</option>
+  </select>
+  <label>Status</label>
+  <select id="reportStatusFilter">
+    <option value="all">All</option>
+    <option value="pending">Pending</option>
+    <option value="approved">Approved</option>
+    <option value="denied">Denied</option>
+  </select>
+  <button id="refreshReportsBtn">Refresh</button>
+</div>
+
+<div style="margin-top:10px;overflow:auto">
+  <table id="reportsTable">
+    <thead>
+      <tr>
+        <th>Type</th>
+        <th>Subject</th>
+        <th>Officer</th>
+        <th>Date</th>
+        <th>Source Tab</th>
+        <th>Status</th>
+        <th>Approved By</th>
+        <th>Approved At</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+</div>
 `;
 
 loadReportsSummary();
+loadReportItems();
+
+const linkBtn = document.getElementById('linkDisciplineSourceBtn');
+if (linkBtn) linkBtn.addEventListener('click', linkDisciplinarySource);
+
+const evalLinkBtn = document.getElementById('linkEvaluationSourceBtn');
+if (evalLinkBtn) evalLinkBtn.addEventListener('click', linkEvaluationSource);
+
+const savedDisciplineUrl = localStorage.getItem(DISCIPLINE_SOURCE_URL_KEY) || '';
+const disciplineUrlEl = document.getElementById('disciplineSourceUrl');
+if (disciplineUrlEl && savedDisciplineUrl) disciplineUrlEl.value = savedDisciplineUrl;
+
+const savedEvaluationUrl = localStorage.getItem(EVALUATION_SOURCE_URL_KEY) || DEFAULT_EVALUATION_SOURCE_URL;
+const evaluationUrlEl = document.getElementById('evaluationSourceUrl');
+if (evaluationUrlEl && savedEvaluationUrl) evaluationUrlEl.value = savedEvaluationUrl;
+
+const refreshBtn = document.getElementById('refreshReportsBtn');
+if (refreshBtn) refreshBtn.addEventListener('click', () => {
+  loadReportsSummary();
+  loadReportItems();
+});
+
+const allBtn = document.getElementById('showAllReportsBtn');
+if (allBtn) allBtn.addEventListener('click', () => {
+  const t = document.getElementById('reportTypeFilter');
+  const s = document.getElementById('reportStatusFilter');
+  if (t) t.value = 'all';
+  if (s) s.value = 'all';
+  loadReportItems();
+});
+
+const disciplineBtn = document.getElementById('showDisciplineReportsBtn');
+if (disciplineBtn) disciplineBtn.addEventListener('click', () => {
+  const t = document.getElementById('reportTypeFilter');
+  const s = document.getElementById('reportStatusFilter');
+  if (t) t.value = 'discipline';
+  if (s) s.value = 'pending';
+  loadReportItems();
+});
+
+const evalBtn = document.getElementById('showEvaluationReportsBtn');
+if (evalBtn) evalBtn.addEventListener('click', () => {
+  const t = document.getElementById('reportTypeFilter');
+  const s = document.getElementById('reportStatusFilter');
+  if (t) t.value = 'evaluation';
+  if (s) s.value = 'pending';
+  loadReportItems();
+});
+
+const msgBtn = document.getElementById('showMessageReportsBtn');
+if (msgBtn) msgBtn.addEventListener('click', () => {
+  const t = document.getElementById('reportTypeFilter');
+  const s = document.getElementById('reportStatusFilter');
+  if (t) t.value = 'message';
+  if (s) s.value = 'all';
+  loadReportItems();
+});
+
+const typeFilter = document.getElementById('reportTypeFilter');
+if (typeFilter) typeFilter.addEventListener('change', loadReportItems);
+
+const statusFilter = document.getElementById('reportStatusFilter');
+if (statusFilter) statusFilter.addEventListener('change', loadReportItems);
+
+}
+
+
+/* MESSAGES */
+
+if(page === "messages"){
+
+document.getElementById("content").innerHTML = `
+<h2>Internal Messages</h2>
+<p>Secure command inbox with notifications.</p>
+
+<div style="margin-top:12px;border:1px solid rgba(255,255,255,.2);padding:10px;background:rgba(0,0,0,.15)">
+  <b>Compose Message</b>
+  <div style="margin-top:8px;display:grid;grid-template-columns:1fr;gap:8px;max-width:760px;">
+    <select id="msgRecipient"><option value="">Loading recipients...</option></select>
+    <input id="msgSubject" type="text" placeholder="Subject">
+    <textarea id="msgBody" rows="5" placeholder="Message body"></textarea>
+  </div>
+  <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
+    <button id="sendMessageBtn">Send</button>
+    <button id="refreshMessagesBtn">Refresh</button>
+    <button id="showInboxBtn">Inbox</button>
+    <button id="showSentBtn">Sent</button>
+  </div>
+</div>
+
+<pre id="messagesStatus" style="margin-top:10px;white-space:pre-wrap;background:rgba(0,0,0,.2);padding:10px;border:1px solid rgba(255,255,255,.2)">Loading messages...</pre>
+
+<div style="margin-top:10px;overflow:auto">
+  <table id="messagesTable">
+    <thead>
+      <tr>
+        <th>From/To</th>
+        <th>Subject</th>
+        <th>Preview</th>
+        <th>Sent</th>
+        <th>Status</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+</div>
+`;
+
+const sendBtn = document.getElementById('sendMessageBtn');
+if (sendBtn) sendBtn.addEventListener('click', sendInternalMessage);
+
+const refreshBtn = document.getElementById('refreshMessagesBtn');
+if (refreshBtn) refreshBtn.addEventListener('click', loadInboxMessages);
+
+const inboxBtn = document.getElementById('showInboxBtn');
+if (inboxBtn) inboxBtn.addEventListener('click', loadInboxMessages);
+
+const sentBtn = document.getElementById('showSentBtn');
+if (sentBtn) sentBtn.addEventListener('click', loadSentMessages);
+
+loadMessageRecipients();
+loadInboxMessages();
 
 }
 
@@ -281,6 +555,8 @@ loadReportsSummary();
 /* ACCOUNT */
 
 if(page === "account"){
+
+const canAdminReset = isPrivilegedRoleClient((currentUser && currentUser.role) || '');
 
 document.getElementById("content").innerHTML = `
 <h2>My Account</h2>
@@ -296,6 +572,28 @@ document.getElementById("content").innerHTML = `
     <tr><td>Role</td><td>${(currentUser && currentUser.role) || '-'}</td></tr>
   </tbody>
 </table>
+
+<div style="margin-top:16px;border:1px solid rgba(255,255,255,.2);padding:10px;background:rgba(0,0,0,.15)">
+  <b>Change Password</b>
+  <div style="margin-top:8px;display:grid;grid-template-columns:1fr;gap:6px;max-width:420px;">
+    <input id="oldPassword" type="password" placeholder="Old password">
+    <input id="newPassword" type="password" placeholder="New password">
+    <input id="confirmPassword" type="password" placeholder="Confirm new password">
+  </div>
+  <button id="changePasswordBtn" style="margin-top:8px;">Update Password</button>
+</div>
+
+${canAdminReset ? `
+<div style="margin-top:14px;border:1px solid rgba(255,255,255,.2);padding:10px;background:rgba(0,0,0,.15)">
+  <b>Admin Password Reset</b>
+  <div style="margin-top:8px;display:grid;grid-template-columns:1fr;gap:6px;max-width:420px;">
+    <input id="resetEmail" type="email" placeholder="Target account email">
+    <input id="resetNewPassword" type="password" placeholder="Temporary new password">
+  </div>
+  <button id="adminResetPasswordBtn" style="margin-top:8px;">Reset User Password</button>
+</div>
+` : ''}
+
 <div style="margin-top:12px;">
   <button id="logoutBtn">Logout</button>
 </div>
@@ -303,6 +601,10 @@ document.getElementById("content").innerHTML = `
 `;
 
 document.getElementById('logoutBtn').addEventListener('click', logoutAccount);
+document.getElementById('changePasswordBtn').addEventListener('click', changePassword);
+
+const adminResetBtn = document.getElementById('adminResetPasswordBtn');
+if (adminResetBtn) adminResetBtn.addEventListener('click', adminResetPassword);
 
 }
 
@@ -827,38 +1129,384 @@ async function loadReportsSummary() {
   if (!box) return;
 
   try {
-    const tabsRes = await fetch('/api/sheets/tabs');
-    const tabs = await tabsRes.json();
-    if (!tabsRes.ok || !Array.isArray(tabs)) throw new Error('Failed to load sheet tabs');
+    const response = await authFetch('/api/reports/summary');
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Failed to load report summary');
 
-    const sources = [
-      { key: 'discipline_records', label: 'Discipline Reports' },
-      { key: 'cadet_evaluations', label: 'Cadet Evaluations' },
-      { key: 'officer_notes', label: 'Internal Messages' },
-      { key: 'internal_messages', label: 'Internal Messages (Alt Tab)' }
+    const summary = data.summary || {};
+    const discipline = summary.discipline || {};
+    const evaluation = summary.evaluation || {};
+    const message = summary.message || {};
+    const tabs = Array.isArray(data.configuredTabs) ? data.configuredTabs : [];
+
+    const lines = [
+      'Discipline: total ' + (discipline.total || 0) + ' | pending ' + (discipline.pending || 0) + ' | approved ' + (discipline.approved || 0) + ' | denied ' + (discipline.denied || 0),
+      'Evaluations: total ' + (evaluation.total || 0) + ' | pending ' + (evaluation.pending || 0) + ' | approved ' + (evaluation.approved || 0) + ' | denied ' + (evaluation.denied || 0),
+      'Internal Messages: total ' + (message.total || 0),
+      '',
+      'Configured report source tabs: ' + (tabs.length ? tabs.join(', ') : 'none')
     ];
-
-    const lines = [];
-    for (const src of sources) {
-      if (!tabs.includes(src.key)) {
-        lines.push(src.label + ': not imported');
-        continue;
-      }
-
-      const res = await fetch('/api/sheets/tab/' + encodeURIComponent(src.key));
-      const rows = await res.json();
-      if (!res.ok || !Array.isArray(rows)) {
-        lines.push(src.label + ': failed to load');
-      } else {
-        lines.push(src.label + ': ' + rows.length + ' records');
-      }
-    }
-
-    lines.push('');
-    lines.push('Step 2 next: approval workflow with approver + timestamp on discipline/eval actions.');
     box.textContent = lines.join('\n');
   } catch (err) {
     box.textContent = 'Reports summary unavailable: ' + err.message;
+  }
+}
+
+function escapeHtml(text) {
+  return String(text || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function formatDateTime(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '-';
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) return raw;
+  return d.toLocaleString();
+}
+
+async function loadReportItems() {
+  const tableBody = document.querySelector('#reportsTable tbody');
+  if (!tableBody) return;
+
+  const typeFilterEl = document.getElementById('reportTypeFilter');
+  const statusFilterEl = document.getElementById('reportStatusFilter');
+  const type = String((typeFilterEl && typeFilterEl.value) || 'all').trim();
+  const status = String((statusFilterEl && statusFilterEl.value) || 'all').trim();
+
+  tableBody.innerHTML = '<tr><td colspan="9">Loading reports...</td></tr>';
+
+  try {
+    const url = '/api/reports/items?type=' + encodeURIComponent(type) + '&status=' + encodeURIComponent(status);
+    const response = await authFetch(url);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Failed to load report items');
+
+    const items = Array.isArray(data.items) ? data.items : [];
+    if (!items.length) {
+      tableBody.innerHTML = '<tr><td colspan="9">No reports found for current filters.</td></tr>';
+      return;
+    }
+
+    tableBody.innerHTML = items.map((item) => {
+      const sourceTabText = String(item.sourceTab || '').toLowerCase();
+      const canApprove =
+        item.type === 'discipline' ||
+        item.type === 'evaluation' ||
+        sourceTabText.includes('disciplin') ||
+        sourceTabText.includes('eval');
+      const statusText = escapeHtml(item.approvalStatus || 'pending');
+      const actionButtons = canApprove
+        ? '<button onclick="setReportApproval(\'' + escapeHtml(item.id) + '\',\'approved\')">Approve</button> ' +
+          '<button onclick="setReportApproval(\'' + escapeHtml(item.id) + '\',\'denied\')">Deny</button> ' +
+          '<button onclick="setReportApproval(\'' + escapeHtml(item.id) + '\',\'pending\')">Reset</button>'
+        : '-';
+
+      return '<tr>' +
+        '<td>' + escapeHtml(item.type) + '</td>' +
+        '<td title="' + escapeHtml(item.detail || '') + '">' + escapeHtml(item.subject || '-') + '</td>' +
+        '<td>' + escapeHtml(item.officerName || '-') + '</td>' +
+        '<td>' + escapeHtml(item.reportDate || '-') + '</td>' +
+        '<td>' + escapeHtml(item.sourceTab || '-') + '</td>' +
+        '<td>' + statusText + '</td>' +
+        '<td>' + escapeHtml(item.approvedBy || '-') + '</td>' +
+        '<td>' + escapeHtml(formatDateTime(item.approvedAt || '')) + '</td>' +
+        '<td>' + actionButtons + '</td>' +
+        '</tr>';
+    }).join('');
+  } catch (err) {
+    tableBody.innerHTML = '<tr><td colspan="9">Unable to load reports: ' + escapeHtml(err.message) + '</td></tr>';
+  }
+}
+
+async function setReportApproval(reportId, status) {
+  try {
+    const response = await authFetch('/api/reports/' + encodeURIComponent(reportId) + '/approval', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Failed to update approval status');
+
+    await loadReportsSummary();
+    await loadReportItems();
+  } catch (err) {
+    alert('Approval update failed: ' + err.message);
+  }
+}
+
+async function linkDisciplinarySource() {
+  const tabNameEl = document.getElementById('disciplineTabName');
+  const urlEl = document.getElementById('disciplineSourceUrl');
+  const tabName = String((tabNameEl && tabNameEl.value) || 'disciplinary_forms').trim();
+  const url = String((urlEl && urlEl.value) || '').trim();
+
+  if (!url) {
+    alert('Paste the disciplinary source Google Sheet/CSV link first.');
+    return;
+  }
+
+  try {
+    const response = await authFetch('/api/reports/link-disciplinary-source', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tabName, url })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Failed to link disciplinary source');
+
+    try {
+      localStorage.setItem(DISCIPLINE_SOURCE_URL_KEY, url);
+    } catch (e) {
+      // Ignore localStorage write errors.
+    }
+
+    alert('Disciplinary source linked as tab "' + tabName + '".');
+    await loadReportsSummary();
+    await loadReportItems();
+    loadSyncStatus();
+  } catch (err) {
+    alert('Link failed: ' + err.message);
+  }
+}
+
+async function linkEvaluationSource() {
+  const tabNameEl = document.getElementById('evaluationTabName');
+  const urlEl = document.getElementById('evaluationSourceUrl');
+  const tabName = String((tabNameEl && tabNameEl.value) || 'cadet_evaluations').trim();
+  const url = String((urlEl && urlEl.value) || '').trim();
+
+  if (!url) {
+    alert('Paste the cadet evaluations source Google Sheet/CSV link first.');
+    return;
+  }
+
+  try {
+    const response = await authFetch('/api/reports/link-evaluation-source', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tabName, url })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Failed to link cadet evaluations source');
+
+    try {
+      localStorage.setItem(EVALUATION_SOURCE_URL_KEY, url);
+    } catch (e) {
+      // Ignore localStorage write errors.
+    }
+
+    alert('Cadet evaluations source linked as tab "' + tabName + '".');
+    await loadReportsSummary();
+    await loadReportItems();
+    loadSyncStatus();
+  } catch (err) {
+    alert('Link failed: ' + err.message);
+  }
+}
+
+async function changePassword() {
+  const oldPassword = String((document.getElementById('oldPassword') || {}).value || '');
+  const newPassword = String((document.getElementById('newPassword') || {}).value || '');
+  const confirmPassword = String((document.getElementById('confirmPassword') || {}).value || '');
+  const status = document.getElementById('accountStatus');
+
+  try {
+    const response = await authFetch('/api/auth/change-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ oldPassword, newPassword, confirmPassword })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Password update failed');
+
+    if (status) status.textContent = data.message || 'Password updated successfully.';
+    const oldEl = document.getElementById('oldPassword');
+    const newEl = document.getElementById('newPassword');
+    const confirmEl = document.getElementById('confirmPassword');
+    if (oldEl) oldEl.value = '';
+    if (newEl) newEl.value = '';
+    if (confirmEl) confirmEl.value = '';
+  } catch (err) {
+    if (status) status.textContent = 'Password update failed: ' + err.message;
+  }
+}
+
+async function adminResetPassword() {
+  const email = String((document.getElementById('resetEmail') || {}).value || '').trim();
+  const newPassword = String((document.getElementById('resetNewPassword') || {}).value || '');
+  const status = document.getElementById('accountStatus');
+
+  try {
+    const response = await authFetch('/api/auth/admin-reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, newPassword })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Admin reset failed');
+
+    if (status) status.textContent = data.message || ('Password reset for ' + email + '.');
+    const emailEl = document.getElementById('resetEmail');
+    const pwdEl = document.getElementById('resetNewPassword');
+    if (emailEl) emailEl.value = '';
+    if (pwdEl) pwdEl.value = '';
+  } catch (err) {
+    if (status) status.textContent = 'Admin reset failed: ' + err.message;
+  }
+}
+
+function messagePreview(text) {
+  const raw = String(text || '').trim();
+  if (!raw) return '-';
+  return raw.length > 120 ? (raw.slice(0, 117) + '...') : raw;
+}
+
+async function loadMessageRecipients() {
+  const select = document.getElementById('msgRecipient');
+  if (!select) return;
+
+  try {
+    const response = await authFetch('/api/messages/users');
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Failed to load recipients');
+
+    const users = Array.isArray(data.users) ? data.users : [];
+    if (!users.length) {
+      select.innerHTML = '<option value="">No recipients available</option>';
+      return;
+    }
+
+    select.innerHTML = '<option value="">Select recipient...</option>' + users.map((u) => {
+      const email = escapeHtml(u.email || '');
+      const label = escapeHtml((u.displayName || u.email || '') + ' (' + (u.email || '') + ')');
+      return '<option value="' + email + '">' + label + '</option>';
+    }).join('');
+  } catch (err) {
+    select.innerHTML = '<option value="">Failed to load recipients</option>';
+  }
+}
+
+function renderMessagesTable(items, mode) {
+  const tableBody = document.querySelector('#messagesTable tbody');
+  const status = document.getElementById('messagesStatus');
+  if (!tableBody) return;
+
+  const rows = Array.isArray(items) ? items : [];
+  if (!rows.length) {
+    tableBody.innerHTML = '<tr><td colspan="6">No messages found.</td></tr>';
+    if (status) status.textContent = mode === 'sent' ? 'No sent messages yet.' : 'Inbox is empty.';
+    return;
+  }
+
+  tableBody.innerHTML = rows.map((m) => {
+    const who = mode === 'sent'
+      ? ('To: ' + escapeHtml(m.toName || m.toEmail || '-'))
+      : ('From: ' + escapeHtml(m.fromName || m.fromEmail || '-'));
+    const readStatus = m.readAt ? 'Read' : 'Unread';
+    const action = mode === 'sent'
+      ? '-'
+      : (m.readAt
+        ? '<button onclick="markMessageRead(\'' + escapeHtml(m.id) + '\',false)">Mark Unread</button>'
+        : '<button onclick="markMessageRead(\'' + escapeHtml(m.id) + '\',true)">Mark Read</button>');
+
+    return '<tr>' +
+      '<td>' + who + '</td>' +
+      '<td>' + escapeHtml(m.subject || '-') + '</td>' +
+      '<td title="' + escapeHtml(m.body || '') + '">' + escapeHtml(messagePreview(m.body || '')) + '</td>' +
+      '<td>' + escapeHtml(formatDateTime(m.createdAt || '')) + '</td>' +
+      '<td>' + escapeHtml(readStatus) + '</td>' +
+      '<td>' + action + '</td>' +
+      '</tr>';
+  }).join('');
+
+  if (status) {
+    status.textContent = (mode === 'sent' ? 'Sent messages' : 'Inbox messages') + ': ' + rows.length;
+  }
+}
+
+async function loadInboxMessages() {
+  const tableBody = document.querySelector('#messagesTable tbody');
+  if (tableBody) tableBody.innerHTML = '<tr><td colspan="6">Loading inbox...</td></tr>';
+
+  try {
+    const response = await authFetch('/api/messages/inbox?limit=100');
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Failed to load inbox');
+    renderMessagesTable(data.items || [], 'inbox');
+    await loadUnreadMessageCount();
+  } catch (err) {
+    if (tableBody) tableBody.innerHTML = '<tr><td colspan="6">' + escapeHtml(err.message) + '</td></tr>';
+    const status = document.getElementById('messagesStatus');
+    if (status) status.textContent = 'Inbox failed: ' + err.message;
+  }
+}
+
+async function loadSentMessages() {
+  const tableBody = document.querySelector('#messagesTable tbody');
+  if (tableBody) tableBody.innerHTML = '<tr><td colspan="6">Loading sent messages...</td></tr>';
+
+  try {
+    const response = await authFetch('/api/messages/sent?limit=100');
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Failed to load sent messages');
+    renderMessagesTable(data.items || [], 'sent');
+  } catch (err) {
+    if (tableBody) tableBody.innerHTML = '<tr><td colspan="6">' + escapeHtml(err.message) + '</td></tr>';
+    const status = document.getElementById('messagesStatus');
+    if (status) status.textContent = 'Sent failed: ' + err.message;
+  }
+}
+
+async function sendInternalMessage() {
+  const recipient = String((document.getElementById('msgRecipient') || {}).value || '').trim();
+  const subject = String((document.getElementById('msgSubject') || {}).value || '').trim();
+  const body = String((document.getElementById('msgBody') || {}).value || '').trim();
+  const status = document.getElementById('messagesStatus');
+
+  if (!recipient) {
+    if (status) status.textContent = 'Select a recipient first.';
+    return;
+  }
+
+  try {
+    const response = await authFetch('/api/messages/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ toEmail: recipient, subject, body })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Message send failed');
+
+    if (status) status.textContent = 'Message sent to ' + recipient + '.';
+    const subjectEl = document.getElementById('msgSubject');
+    const bodyEl = document.getElementById('msgBody');
+    if (subjectEl) subjectEl.value = '';
+    if (bodyEl) bodyEl.value = '';
+    loadSentMessages();
+  } catch (err) {
+    if (status) status.textContent = 'Send failed: ' + err.message;
+  }
+}
+
+async function markMessageRead(messageId, read) {
+  try {
+    const response = await authFetch('/api/messages/' + encodeURIComponent(messageId) + '/read', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ read: !!read })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Message status update failed');
+    await loadInboxMessages();
+  } catch (err) {
+    const status = document.getElementById('messagesStatus');
+    if (status) status.textContent = 'Read status update failed: ' + err.message;
   }
 }
 
@@ -869,8 +1517,11 @@ async function logoutAccount() {
     // Ignore logout errors.
   }
   setAuthToken('');
+  stopMessagePolling();
+  unreadMessageCount = 0;
   currentUser = null;
   showAuthBanner();
+  applyRuntimeLayoutFixes();
   renderLoginScreen('Logged out. Please login to continue.');
 }
 
