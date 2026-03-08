@@ -208,20 +208,35 @@ async function fetchCsvWithFallback(rawUrl) {
   let lastStatus = 0;
   let lastStatusText = 'Unknown error';
   let lastUrl = String(rawUrl || '');
+  let htmlResponseSeen = false;
+
+  const looksLikeHtml = (text) => {
+    const sample = String(text || '').trim().slice(0, 600).toLowerCase();
+    return sample.startsWith('<!doctype html') ||
+      sample.startsWith('<html') ||
+      sample.includes('<head>') ||
+      sample.includes('<meta ');
+  };
 
   for (const candidate of candidates) {
     lastUrl = candidate;
     const response = await fetch(candidate);
     if (response.ok) {
       const text = await response.text();
+      const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+      if (contentType.includes('text/html') || looksLikeHtml(text)) {
+        htmlResponseSeen = true;
+        continue;
+      }
       return { ok: true, csvText: text, urlUsed: candidate };
     }
     lastStatus = response.status;
     lastStatusText = response.statusText;
   }
 
-  const guidance = 'Google returned HTTP ' + lastStatus + ' for all link formats. ' +
-    'Verify the sheet/tab is published to web as CSV and accessible to anyone with the link.';
+  const guidance = htmlResponseSeen
+    ? 'Google returned an HTML page instead of CSV. Use a published CSV URL for a specific tab (gid).'
+    : 'Google returned HTTP ' + lastStatus + ' for all link formats. Verify the sheet/tab is published to web as CSV and accessible to anyone with the link.';
 
   return {
     ok: false,
