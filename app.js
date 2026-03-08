@@ -6,7 +6,7 @@ const AUTH_TOKEN_KEY = 'fwpd_auth_token';
 const DISCIPLINE_SOURCE_URL_KEY = 'fwpd_discipline_source_url';
 const EVALUATION_SOURCE_URL_KEY = 'fwpd_evaluation_source_url';
 const DEFAULT_EVALUATION_SOURCE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR6_40O35zd-9GMo_nTg5KS76Svzt1P8ZKrfBQwPAtLloGFtpE1r4JBP3t-F-meLlDKCpvWzZkhMlOb/pub?output=csv&gid=1513386776';
-const APP_BUILD = '20260308z6';
+const APP_BUILD = '20260308z7';
 const MESSAGE_POLL_MS = 45000;
 
 let currentUser = null;
@@ -884,6 +884,7 @@ async function enrichOfficerProfileData(officer) {
 function renderOfficerProfile(officer) {
   const profileId = pickOfficerField(officer, ['ID', 'id', 'Officer_ID', 'officer_id']);
   const profileName = pickOfficerField(officer, ['Name', 'name', 'RP_Name', 'rp_name', 'Officer_Name', 'officer_name']);
+  const profileNotes = pickOfficerField(officer, ['Notes', 'notes', 'Officer_Notes', 'officer_notes', 'Comments', 'comments']);
 
   const imported = (officer && officer.ImportedFields && typeof officer.ImportedFields === 'object')
     ? officer.ImportedFields
@@ -910,6 +911,8 @@ function renderOfficerProfile(officer) {
 
     <p><b>ID:</b> ${profileId || '-'}</p>
     <p><b>Name:</b> ${profileName || '-'}</p>
+    <p><b>Notes:</b></p>
+    <pre style="margin-top:6px;white-space:pre-wrap;background:rgba(0,0,0,.2);padding:10px;border:1px solid rgba(255,255,255,.2)">${escapeHtml(profileNotes || 'No notes added.')}</pre>
 
     <h3 style="margin-top:18px;">All Imported Officer Data</h3>
     ${rowsToTable(importedRows)}
@@ -925,6 +928,8 @@ function showOfficerForm(id = null, data = {}) {
       <label>Callsign: <input id="formCallsign" value="${data.Callsign || ''}"></label><br>
       <label>Rank: <input id="formRank" value="${data.Rank || ''}"></label><br>
       <label>Division: <input id="formDivision" value="${data.Division || ''}"></label><br>
+      <label>Notes:</label><br>
+      <textarea id="formNotes" rows="4" style="width:100%;max-width:380px;">${String(data.Notes || '')}</textarea><br>
       <button id="saveOfficer">Save</button>
       <button onclick="closeForm()">Cancel</button>
     </div>
@@ -948,7 +953,8 @@ async function saveOfficer(id) {
     Name: document.getElementById('formName').value,
     Callsign: document.getElementById('formCallsign').value,
     Rank: document.getElementById('formRank').value,
-    Division: document.getElementById('formDivision').value
+    Division: document.getElementById('formDivision').value,
+    Notes: document.getElementById('formNotes').value
   };
   try {
     const method = id ? 'PUT' : 'POST';

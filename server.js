@@ -858,6 +858,7 @@ function mapRosterRecords(records) {
     let callsign = pick('callsign', 'call_sign', 'callsigns', 'radioid', 'radio');
     const rank = pick('rank', 'officer_rank', 'officerrank', 'grade');
     const division = pick('division', 'department_division', 'departmentdivision', 'unit');
+    const notes = pick('notes', 'note', 'comments', 'remarks', 'officer_notes');
 
     // Recover from imports where a text name landed in Callsign.
     if (!name && callsign && /[a-z]/i.test(callsign) && !/\d/.test(callsign)) {
@@ -894,6 +895,7 @@ function mapRosterRecords(records) {
       Callsign: callsign,
       Rank: rank,
       Division: division,
+      Notes: notes,
       ImportedFields: importedFields,
       ColumnsKT: columnsKT,
       ColumnsNT: columnsNT
