@@ -50,7 +50,7 @@ body::after {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  background: url('images/ntxrp.png') center calc(50% + 290px) / min(40vw, 430px) no-repeat;
+  background: url('images/ntxrp.png') center calc(50% + 380px) / min(30vw, 322px) no-repeat;
   opacity: 0.34;
   filter: contrast(1.06) saturate(0.88);
   z-index: 0;
@@ -339,7 +339,7 @@ pre {
   }
 
   body::after {
-    background: url('images/ntxrp.png') center calc(50% + 190px) / min(62vw, 300px) no-repeat;
+    background: url('images/ntxrp.png') center calc(50% + 250px) / min(46vw, 225px) no-repeat;
     opacity: 0.32;
   }
 
