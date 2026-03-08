@@ -82,7 +82,7 @@ document.getElementById("content").innerHTML = `
 <div style="margin:8px 0">
   <button id="addOfficer">Add Officer</button>
   <button id="refreshRoster">Refresh</button>
-  <button id="syncSheets">Sync Google Sheets</button>
+  <button id="syncSheets">Sync Now (Manual)</button>
 </div>
 <table id="rosterTable">
 <thead>
