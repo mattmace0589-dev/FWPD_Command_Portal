@@ -6,7 +6,7 @@ const AUTH_TOKEN_KEY = 'fwpd_auth_token';
 const DISCIPLINE_SOURCE_URL_KEY = 'fwpd_discipline_source_url';
 const EVALUATION_SOURCE_URL_KEY = 'fwpd_evaluation_source_url';
 const DEFAULT_EVALUATION_SOURCE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR6_40O35zd-9GMo_nTg5KS76Svzt1P8ZKrfBQwPAtLloGFtpE1r4JBP3t-F-meLlDKCpvWzZkhMlOb/pub?output=csv&gid=1513386776';
-const APP_BUILD = '20260308z8';
+const APP_BUILD = '20260308z9';
 const MESSAGE_POLL_MS = 45000;
 
 let currentUser = null;
@@ -733,6 +733,7 @@ async function loadRoster(){
       const tr = document.createElement('tr');
       const actionButtons = isLoggedIn()
         ? `<button data-id="${safeIdAttr}" data-name="${safeNameAttr}" data-callsign="${safeCallsignAttr}" onclick="openOfficerProfileFromRow(this)">Profile</button>
+            <button onclick="openOfficerNotes('${id}')">Notes</button>
             <button onclick="editOfficer('${id}')">Edit</button>
             <button onclick="deleteOfficer('${id}')">Delete</button>`
         : `<button data-id="${safeIdAttr}" data-name="${safeNameAttr}" data-callsign="${safeCallsignAttr}" onclick="openOfficerProfileFromRow(this)">Profile</button>`;
@@ -888,6 +889,14 @@ function renderOfficerProfile(officer) {
   const profileId = pickOfficerField(officer, ['ID', 'id', 'Officer_ID', 'officer_id']);
   const profileName = pickOfficerField(officer, ['Name', 'name', 'RP_Name', 'rp_name', 'Officer_Name', 'officer_name']);
   const profileNotes = pickOfficerField(officer, ['Notes', 'notes', 'Officer_Notes', 'officer_notes', 'Comments', 'comments']);
+  const notesEditor = (isLoggedIn() && profileId)
+    ? `
+    <div style="margin-top:12px;border:1px solid rgba(255,255,255,.2);padding:10px;background:rgba(0,0,0,.15)">
+      <b>Edit Notes</b><br>
+      <textarea id="profileNotesInput" rows="5" style="width:100%;max-width:700px;margin-top:8px;">${escapeHtml(profileNotes || '')}</textarea><br>
+      <button id="saveOfficerNotesBtn" style="margin-top:8px;">Save Notes</button>
+    </div>`
+    : '';
 
   const imported = (officer && officer.ImportedFields && typeof officer.ImportedFields === 'object')
     ? officer.ImportedFields
@@ -916,10 +925,58 @@ function renderOfficerProfile(officer) {
     <p><b>Name:</b> ${profileName || '-'}</p>
     <p><b>Notes:</b></p>
     <pre style="margin-top:6px;white-space:pre-wrap;background:rgba(0,0,0,.2);padding:10px;border:1px solid rgba(255,255,255,.2)">${escapeHtml(profileNotes || 'No notes added.')}</pre>
+    ${notesEditor}
 
     <h3 style="margin-top:18px;">All Imported Officer Data</h3>
     ${rowsToTable(importedRows)}
   `;
+
+  if (isLoggedIn() && profileId) {
+    const saveBtn = document.getElementById('saveOfficerNotesBtn');
+    if (saveBtn) saveBtn.addEventListener('click', () => saveOfficerNotes(profileId));
+  }
+}
+
+async function saveOfficerNotes(officerId, explicitNotes) {
+  if (!isLoggedIn()) {
+    alert('Login required for roster edits.');
+    return;
+  }
+
+  const id = String(officerId || '').trim();
+  if (!id) {
+    alert('Cannot save notes: missing officer ID.');
+    return;
+  }
+
+  const notesValue = (typeof explicitNotes === 'string')
+    ? explicitNotes
+    : String(((document.getElementById('profileNotesInput') || {}).value) || '');
+
+  try {
+    const response = await authFetch('/api/roster/' + encodeURIComponent(id), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ Notes: notesValue })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Save notes failed');
+    await openOfficerProfile({ id });
+  } catch (err) {
+    alert('Save notes failed: ' + err.message);
+  }
+}
+
+async function openOfficerNotes(id) {
+  if (!isLoggedIn()) {
+    alert('Login required for roster edits.');
+    return;
+  }
+  try {
+    await openOfficerProfile({ id: String(id || '').trim() });
+  } catch (err) {
+    alert('Unable to open notes editor: ' + err.message);
+  }
 }
 
 function showOfficerForm(id = null, data = {}) {
