@@ -374,8 +374,12 @@ function findCommandUserByEmailFromRecords(email, records) {
   const normalized = normalizeEmail(email);
   if (!normalized) return null;
 
+  const isValidEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
+  const localPart = (value) => String(value || '').trim().toLowerCase().split('@')[0] || '';
+  const requestedLocal = localPart(normalized);
+
   const row = records.find((r) => {
-    const rowEmail = normalizeEmail(pickField(r, [
+    const rowEmailRaw = pickField(r, [
       'email',
       'email_address',
       'mail',
@@ -383,8 +387,19 @@ function findCommandUserByEmailFromRecords(email, records) {
       'google_email',
       'google email',
       'googleemail'
-    ]));
-    return rowEmail && rowEmail === normalized;
+    ]);
+    const rowEmail = normalizeEmail(rowEmailRaw);
+    if (!rowEmail) return false;
+
+    // Primary: strict email match.
+    if (rowEmail === normalized) return true;
+
+    // Fallback: if row email is malformed/truncated, match by local-part.
+    if (!isValidEmail(rowEmailRaw) && requestedLocal && localPart(rowEmailRaw) === requestedLocal) {
+      return true;
+    }
+
+    return false;
   });
   if (!row) return null;
 
