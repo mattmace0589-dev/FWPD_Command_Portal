@@ -1,6 +1,27 @@
 // Simple local API calls to /api/roster endpoints
 
 const AUTO_SYNC_SESSION_KEY = 'fwpd_auto_sync_done';
+const LOCAL_SYNC_TABS_KEY = 'fwpd_sync_tabs_v1';
+
+function getLocalSyncTabs() {
+  try {
+    const raw = localStorage.getItem(LOCAL_SYNC_TABS_KEY);
+    const parsed = JSON.parse(raw || '[]');
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(t => t && t.name && t.url);
+  } catch (e) {
+    return [];
+  }
+}
+
+function setLocalSyncTabs(tabs) {
+  try {
+    const safe = Array.isArray(tabs) ? tabs.filter(t => t && t.name && t.url) : [];
+    localStorage.setItem(LOCAL_SYNC_TABS_KEY, JSON.stringify(safe));
+  } catch (e) {
+    // Ignore localStorage errors (private mode/quota).
+  }
+}
 
 function loadPage(page){
 
@@ -309,6 +330,8 @@ async function syncGoogleSheets() {
   }
 
   try {
+    setLocalSyncTabs(tabs);
+
     await fetch('/api/sheets/config', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -397,10 +420,35 @@ async function autoSyncOnLoad() {
     const configResponse = await fetch('/api/sheets/config');
     const config = await configResponse.json();
     if (!configResponse.ok) return;
-    if (!config.autoSyncOnLoad || !Array.isArray(config.tabs) || !config.tabs.length) return;
+
+    let tabsToSync = Array.isArray(config.tabs) ? config.tabs : [];
+    let autoEnabled = !!config.autoSyncOnLoad;
+
+    // Render free deployments can reset local files; restore from browser cache when available.
+    if (!tabsToSync.length) {
+      const cachedTabs = getLocalSyncTabs();
+      if (cachedTabs.length) {
+        tabsToSync = cachedTabs;
+        autoEnabled = true;
+        await fetch('/api/sheets/config', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tabs: tabsToSync, autoSyncOnLoad: true })
+        });
+      }
+    }
+
+    if (!autoEnabled || !tabsToSync.length) {
+      await loadSyncStatus();
+      return;
+    }
 
     sessionStorage.setItem(AUTO_SYNC_SESSION_KEY, '1');
-    const syncResponse = await fetch('/api/sheets/sync', { method: 'POST' });
+    const syncResponse = await fetch('/api/sheets/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tabs: tabsToSync })
+    });
     const syncResult = await syncResponse.json();
     if (!syncResponse.ok) throw new Error(syncResult.error || 'Auto-sync failed');
     await loadSyncStatus();
