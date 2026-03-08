@@ -3,7 +3,7 @@
 const AUTO_SYNC_SESSION_KEY = 'fwpd_auto_sync_done';
 const LOCAL_SYNC_TABS_KEY = 'fwpd_sync_tabs_v1';
 const AUTH_TOKEN_KEY = 'fwpd_auth_token';
-const APP_BUILD = '20260308r';
+const APP_BUILD = '20260308t';
 
 let currentUser = null;
 
@@ -711,8 +711,9 @@ async function createAccount() {
     setAuthToken(data.token || '');
     await refreshAuthSession();
     loadPage('dashboard');
-    if (status) status.textContent = data.message || 'Account created.';
-    alert(data.message || 'Account created.');
+    const welcome = 'Account created. Welcome ' + formatUserDisplayName(currentUser) + '.';
+    if (status) status.textContent = welcome;
+    alert(welcome);
   } catch (err) {
     if (status) status.textContent = 'Create account failed: ' + err.message;
   }
@@ -735,8 +736,9 @@ async function loginAccount() {
     setAuthToken(data.token || '');
     await refreshAuthSession();
     loadPage('dashboard');
-    if (status) status.textContent = data.message || ('Login successful. Welcome ' + formatUserDisplayName(currentUser) + '.');
-    alert(data.message || ('Login successful. Welcome ' + formatUserDisplayName(currentUser) + '.'));
+    const welcome = 'Login successful. Welcome ' + formatUserDisplayName(currentUser) + '.';
+    if (status) status.textContent = welcome;
+    alert(welcome);
   } catch (err) {
     if (status) status.textContent = 'Login failed: ' + err.message;
   }
@@ -754,13 +756,6 @@ function findBestField(row, aliases) {
     }
   }
   return '';
-}
-
-function rowLooksAlertLike(row) {
-  const text = Object.values(row || {}).join(' ').toLowerCase();
-  if (!text.trim()) return false;
-  const keywords = ['alert', 'flag', 'pending', 'review', 'open', 'attention', 'discipline', 'fail'];
-  return keywords.some(k => text.includes(k));
 }
 
 function mapAlertRow(source, row) {
@@ -804,13 +799,13 @@ async function loadDashboardAlerts() {
       const rows = await res.json();
       if (!res.ok || !Array.isArray(rows) || !rows.length) continue;
 
-      const alertRows = rows.filter(rowLooksAlertLike).slice(0, 5);
+      const alertRows = rows.slice(0, 5);
       if (!alertRows.length) continue;
 
       alertRows.forEach(r => lines.push(mapAlertRow(src.label, r)));
     }
 
-    box.textContent = lines.length ? lines.join('\n\n') : 'No active alerts.';
+    box.textContent = lines.length ? lines.join('\n\n') : ('No alert records found. Tabs checked: ' + available.map(x => x.key).join(', '));
   } catch (err) {
     box.textContent = 'Alerts unavailable: ' + err.message;
   }

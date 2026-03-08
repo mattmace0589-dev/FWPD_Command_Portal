@@ -742,7 +742,7 @@ app.post('/api/auth/create-account', async (req, res) => {
       ok: true,
       token,
       user: commandProfile,
-      message: 'Welcome ' + commandProfile.characterName + ' (' + commandProfile.rank + ').'
+      message: 'Welcome ' + commandProfile.rank + ' ' + commandProfile.characterName + '.'
     });
   } catch (err) {
     return res.status(500).json({ error: err.message || String(err) });
@@ -778,7 +778,7 @@ app.post('/api/auth/login', async (req, res) => {
       ok: true,
       token,
       user: commandProfile,
-      message: 'Welcome back ' + commandProfile.characterName + ' (' + commandProfile.rank + ').'
+      message: 'Welcome back ' + commandProfile.rank + ' ' + commandProfile.characterName + '.'
     });
   } catch (err) {
     return res.status(500).json({ error: err.message || String(err) });
