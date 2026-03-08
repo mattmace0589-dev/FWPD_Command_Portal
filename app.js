@@ -2,6 +2,76 @@
 
 const AUTO_SYNC_SESSION_KEY = 'fwpd_auto_sync_done';
 const LOCAL_SYNC_TABS_KEY = 'fwpd_sync_tabs_v1';
+const AUTH_TOKEN_KEY = 'fwpd_auth_token';
+
+let currentUser = null;
+
+function getAuthToken() {
+  return localStorage.getItem(AUTH_TOKEN_KEY) || '';
+}
+
+function setAuthToken(token) {
+  if (token) localStorage.setItem(AUTH_TOKEN_KEY, token);
+  else localStorage.removeItem(AUTH_TOKEN_KEY);
+}
+
+function authHeaders(extra = {}) {
+  const token = getAuthToken();
+  const headers = Object.assign({}, extra);
+  if (token) headers.Authorization = 'Bearer ' + token;
+  return headers;
+}
+
+async function authFetch(url, options = {}) {
+  const headers = authHeaders(options.headers || {});
+  return fetch(url, Object.assign({}, options, { headers }));
+}
+
+function isLoggedIn() {
+  return !!currentUser;
+}
+
+function showAuthBanner() {
+  const existing = document.getElementById('authBanner');
+  if (existing) existing.remove();
+
+  const title = document.querySelector('.title');
+  if (!title) return;
+
+  const banner = document.createElement('div');
+  banner.id = 'authBanner';
+  banner.style.fontSize = '12px';
+  banner.style.letterSpacing = '0';
+  banner.style.marginTop = '6px';
+  banner.textContent = currentUser
+    ? ('Logged in as ' + (currentUser.characterName || 'Officer') + ' (' + (currentUser.rank || 'Unknown') + ')')
+    : 'Not logged in';
+
+  title.appendChild(banner);
+}
+
+async function refreshAuthSession() {
+  const token = getAuthToken();
+  if (!token) {
+    currentUser = null;
+    showAuthBanner();
+    return;
+  }
+
+  try {
+    const response = await authFetch('/api/auth/me');
+    const data = await response.json();
+    if (!response.ok) {
+      setAuthToken('');
+      currentUser = null;
+    } else {
+      currentUser = data.user || null;
+    }
+  } catch (e) {
+    currentUser = null;
+  }
+  showAuthBanner();
+}
 
 function getLocalSyncTabs() {
   try {
@@ -36,6 +106,8 @@ document.getElementById("content").innerHTML = `
 
 <p>Use the sidebar to navigate the system.</p>
 
+<div id="welcomeMessage" style="margin-top:8px;color:#d8f3ff"></div>
+
 <div style="margin-top:30px">
 
 <b>Department Structure</b>
@@ -52,6 +124,13 @@ document.getElementById("content").innerHTML = `
 <pre id="syncStatusBox" style="margin-top:8px;white-space:pre-wrap;background:rgba(0,0,0,.2);padding:10px;border:1px solid rgba(255,255,255,.2)">Loading sync status...</pre>
 </div>
 `;
+
+if (currentUser) {
+  const welcome = document.getElementById('welcomeMessage');
+  if (welcome) {
+    welcome.textContent = 'Welcome ' + (currentUser.characterName || 'Officer') + ' (' + (currentUser.rank || 'Unknown') + ').';
+  }
+}
 
 loadSyncStatus();
 autoSyncOnLoad();
@@ -92,6 +171,45 @@ document.getElementById("content").innerHTML = `
 
 }
 
+if(page === "account"){
+
+document.getElementById("content").innerHTML = `
+<h2>Account Access</h2>
+<p>Login is restricted to emails listed in the <b>Command_Users</b> tab.</p>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;max-width:900px;">
+  <div style="border:1px solid rgba(255,255,255,.2);padding:14px;">
+    <h3>Create Account</h3>
+    <label>Email</label><br>
+    <input id="createEmail" type="email" style="width:100%;max-width:320px"><br>
+    <label>Password</label><br>
+    <input id="createPassword" type="password" style="width:100%;max-width:320px"><br><br>
+    <button id="createAccountBtn">Create Account</button>
+  </div>
+
+  <div style="border:1px solid rgba(255,255,255,.2);padding:14px;">
+    <h3>Login</h3>
+    <label>Email</label><br>
+    <input id="loginEmail" type="email" style="width:100%;max-width:320px"><br>
+    <label>Password</label><br>
+    <input id="loginPassword" type="password" style="width:100%;max-width:320px"><br><br>
+    <button id="loginBtn">Login</button>
+    <button id="logoutBtn" style="margin-left:8px">Logout</button>
+  </div>
+</div>
+<pre id="accountStatus" style="margin-top:14px;white-space:pre-wrap;background:rgba(0,0,0,.2);padding:10px;border:1px solid rgba(255,255,255,.2)"></pre>
+`;
+
+const status = document.getElementById('accountStatus');
+status.textContent = currentUser
+  ? ('Logged in: ' + (currentUser.characterName || 'Officer') + ' (' + (currentUser.rank || 'Unknown') + ')')
+  : 'Not logged in.';
+
+document.getElementById('createAccountBtn').addEventListener('click', createAccount);
+document.getElementById('loginBtn').addEventListener('click', loginAccount);
+document.getElementById('logoutBtn').addEventListener('click', logoutAccount);
+
+}
+
 
 /* OFFICER ROSTER */
 
@@ -124,7 +242,12 @@ document.getElementById("content").innerHTML = `
 loadRoster();
 
 document.getElementById('refreshRoster').addEventListener('click', loadRoster);
-document.getElementById('addOfficer').addEventListener('click', () => showOfficerForm());
+if (isLoggedIn()) {
+  document.getElementById('addOfficer').addEventListener('click', () => showOfficerForm());
+} else {
+  document.getElementById('addOfficer').disabled = true;
+  document.getElementById('addOfficer').title = 'Login required';
+}
 document.getElementById('syncSheets').addEventListener('click', syncGoogleSheets);
 
 }
@@ -188,6 +311,11 @@ async function loadRoster(){
       const safeCallsignAttr = String(callsign || '').replace(/"/g, '&quot;');
 
       const tr = document.createElement('tr');
+      const actionButtons = isLoggedIn()
+        ? `<button data-id="${safeIdAttr}" data-name="${safeNameAttr}" data-callsign="${safeCallsignAttr}" onclick="openOfficerProfileFromRow(this)">Profile</button>
+            <button onclick="editOfficer('${id}')">Edit</button>
+            <button onclick="deleteOfficer('${id}')">Delete</button>`
+        : `<button data-id="${safeIdAttr}" data-name="${safeNameAttr}" data-callsign="${safeCallsignAttr}" onclick="openOfficerProfileFromRow(this)">Profile</button>`;
       tr.innerHTML = `
         <td>
           <button
@@ -205,9 +333,7 @@ async function loadRoster(){
         <td>${division}</td>
         <td class="actions-cell">
           <div class="row-actions">
-            <button data-id="${safeIdAttr}" data-name="${safeNameAttr}" data-callsign="${safeCallsignAttr}" onclick="openOfficerProfileFromRow(this)">Profile</button>
-            <button onclick="editOfficer('${id}')">Edit</button>
-            <button onclick="deleteOfficer('${id}')">Delete</button>
+            ${actionButtons}
           </div>
         </td>
       `;
@@ -395,6 +521,10 @@ function closeForm() {
 }
 
 async function saveOfficer(id) {
+  if (!isLoggedIn()) {
+    alert('Login required for roster edits.');
+    return;
+  }
   const data = {
     ID: document.getElementById('formID').value,
     Name: document.getElementById('formName').value,
@@ -405,7 +535,7 @@ async function saveOfficer(id) {
   try {
     const method = id ? 'PUT' : 'POST';
     const url = id ? `/api/roster/${id}` : '/api/roster';
-    const response = await fetch(url, {
+    const response = await authFetch(url, {
       method: method,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
@@ -419,6 +549,10 @@ async function saveOfficer(id) {
 }
 
 async function editOfficer(id) {
+  if (!isLoggedIn()) {
+    alert('Login required for roster edits.');
+    return;
+  }
   try {
     const response = await fetch(`/api/roster?id=${id}`);
     const data = await response.json();
@@ -434,14 +568,77 @@ async function editOfficer(id) {
 }
 
 async function deleteOfficer(id) {
+  if (!isLoggedIn()) {
+    alert('Login required for roster edits.');
+    return;
+  }
   if (!confirm('Delete this officer?')) return;
   try {
-    const response = await fetch(`/api/roster/${id}`, { method: 'DELETE' });
+    const response = await authFetch(`/api/roster/${id}`, { method: 'DELETE' });
     if (!response.ok) throw new Error('Delete failed');
     loadRoster();
   } catch (err) {
     alert('Error deleting: ' + err.message);
   }
+}
+
+async function createAccount() {
+  const email = String(document.getElementById('createEmail').value || '').trim();
+  const password = String(document.getElementById('createPassword').value || '');
+  const status = document.getElementById('accountStatus');
+
+  try {
+    const response = await fetch('/api/auth/create-account', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Create account failed');
+
+    setAuthToken(data.token || '');
+    await refreshAuthSession();
+    if (status) status.textContent = data.message || 'Account created.';
+    alert(data.message || 'Account created.');
+  } catch (err) {
+    if (status) status.textContent = 'Create account failed: ' + err.message;
+  }
+}
+
+async function loginAccount() {
+  const email = String(document.getElementById('loginEmail').value || '').trim();
+  const password = String(document.getElementById('loginPassword').value || '');
+  const status = document.getElementById('accountStatus');
+
+  try {
+    const response = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Login failed');
+
+    setAuthToken(data.token || '');
+    await refreshAuthSession();
+    if (status) status.textContent = data.message || 'Login successful.';
+    alert(data.message || 'Login successful.');
+  } catch (err) {
+    if (status) status.textContent = 'Login failed: ' + err.message;
+  }
+}
+
+async function logoutAccount() {
+  try {
+    await authFetch('/api/auth/logout', { method: 'POST' });
+  } catch (e) {
+    // Ignore logout errors.
+  }
+  setAuthToken('');
+  currentUser = null;
+  showAuthBanner();
+  const status = document.getElementById('accountStatus');
+  if (status) status.textContent = 'Logged out.';
 }
 
 async function syncGoogleSheets() {
@@ -683,3 +880,5 @@ async function loadSheetTabData(name) {
 }
 
 loadPage('dashboard');
+
+refreshAuthSession();

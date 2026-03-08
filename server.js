@@ -2,6 +2,7 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const cors = require('cors');
+const crypto = require('crypto');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -16,6 +17,8 @@ const DATA_DIR = path.join(__dirname, 'data');
 const JSON_FILE = path.join(DATA_DIR, 'roster.json');
 const CSV_FILE = path.join(__dirname, 'roster.csv');
 const SHEETS_CONFIG_FILE = path.join(DATA_DIR, 'sheets-config.json');
+const USERS_FILE = path.join(DATA_DIR, 'users.json');
+const SESSIONS_FILE = path.join(DATA_DIR, 'sessions.json');
 
 function parseCSV(text) {
   const rows = [];
@@ -261,6 +264,111 @@ function ensureDataDir(){
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
 }
 
+function loadJsonFile(filePath, fallback = []) {
+  ensureDataDir();
+  if (!fs.existsSync(filePath)) {
+    fs.writeFileSync(filePath, JSON.stringify(fallback, null, 2));
+    return fallback;
+  }
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8') || JSON.stringify(fallback));
+  } catch (e) {
+    return fallback;
+  }
+}
+
+function saveJsonFile(filePath, data) {
+  ensureDataDir();
+  fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+}
+
+function normalizeEmail(email) {
+  return String(email || '').trim().toLowerCase();
+}
+
+function hashPassword(password) {
+  return crypto.createHash('sha256').update(String(password || '')).digest('hex');
+}
+
+function generateToken() {
+  return crypto.randomBytes(24).toString('hex');
+}
+
+function getCommandUsersRecords() {
+  const filePath = path.join(DATA_DIR, 'command_users.json');
+  if (!fs.existsSync(filePath)) return [];
+  try {
+    const data = JSON.parse(fs.readFileSync(filePath, 'utf8') || '[]');
+    return Array.isArray(data) ? data : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function pickField(obj, aliases) {
+  const keys = Object.keys(obj || {});
+  for (const alias of aliases) {
+    const wanted = normalizeKey(alias);
+    const found = keys.find(k => normalizeKey(k) === wanted);
+    if (found) {
+      const val = String(obj[found] || '').trim();
+      if (val) return val;
+    }
+  }
+  return '';
+}
+
+function findCommandUserByEmail(email) {
+  const normalized = normalizeEmail(email);
+  if (!normalized) return null;
+
+  const records = getCommandUsersRecords();
+  const row = records.find((r) => {
+    const rowEmail = normalizeEmail(pickField(r, ['email', 'email_address', 'mail', 'discord_email']));
+    return rowEmail && rowEmail === normalized;
+  });
+  if (!row) return null;
+
+  return {
+    email: normalized,
+    characterName: pickField(row, ['character_name', 'rp_name', 'name', 'officer_name']) || 'Officer',
+    rank: pickField(row, ['rank', 'officer_rank']) || 'Unknown',
+    role: pickField(row, ['role', 'access_role', 'permissions']) || 'command'
+  };
+}
+
+function getAuthFromRequest(req) {
+  const authHeader = String(req.headers.authorization || '');
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+  if (!token) return null;
+
+  const sessions = loadJsonFile(SESSIONS_FILE, []);
+  const session = sessions.find(s => s && s.token === token);
+  if (!session) return null;
+
+  const users = loadJsonFile(USERS_FILE, []);
+  const user = users.find(u => normalizeEmail(u.email) === normalizeEmail(session.email));
+  if (!user) return null;
+
+  const commandProfile = findCommandUserByEmail(user.email);
+  if (!commandProfile) return null;
+
+  return {
+    token,
+    email: normalizeEmail(user.email),
+    characterName: commandProfile.characterName,
+    rank: commandProfile.rank,
+    role: commandProfile.role
+  };
+}
+
+function requireAuth(req, res, next) {
+  const auth = getAuthFromRequest(req);
+  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+  req.auth = auth;
+  next();
+}
+
 function loadJson(){
   ensureDataDir();
   if (!fs.existsSync(JSON_FILE)) {
@@ -320,6 +428,11 @@ function getDefaultTabsFromEnv() {
   const rosterUrl = String(process.env.DEFAULT_ROSTER_URL || '').trim();
   if (rosterUrl) {
     tabs.push({ name: 'roster', url: rosterUrl });
+  }
+
+  const commandUsersUrl = String(process.env.DEFAULT_COMMAND_USERS_URL || '').trim();
+  if (commandUsersUrl) {
+    tabs.push({ name: 'command_users', url: commandUsersUrl });
   }
 
   const rawExtra = String(process.env.DEFAULT_SHEETS_TABS || '').trim();
@@ -518,6 +631,108 @@ function mapRosterRecords(records) {
   }).filter(Boolean);
 }
 
+app.post('/api/auth/create-account', (req, res) => {
+  try {
+    const email = normalizeEmail(req.body && req.body.email);
+    const password = String(req.body && req.body.password || '');
+
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required.' });
+    }
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters.' });
+    }
+
+    const commandProfile = findCommandUserByEmail(email);
+    if (!commandProfile) {
+      return res.status(403).json({ error: 'Email not found in Command_Users tab.' });
+    }
+
+    const users = loadJsonFile(USERS_FILE, []);
+    if (users.some(u => normalizeEmail(u.email) === email)) {
+      return res.status(409).json({ error: 'Account already exists. Please log in.' });
+    }
+
+    users.push({
+      email,
+      passwordHash: hashPassword(password),
+      createdAt: new Date().toISOString()
+    });
+    saveJsonFile(USERS_FILE, users);
+
+    const sessions = loadJsonFile(SESSIONS_FILE, []);
+    const token = generateToken();
+    sessions.push({ token, email, createdAt: new Date().toISOString() });
+    saveJsonFile(SESSIONS_FILE, sessions);
+
+    return res.status(201).json({
+      ok: true,
+      token,
+      user: commandProfile,
+      message: 'Welcome ' + commandProfile.characterName + ' (' + commandProfile.rank + ').'
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+app.post('/api/auth/login', (req, res) => {
+  try {
+    const email = normalizeEmail(req.body && req.body.email);
+    const password = String(req.body && req.body.password || '');
+
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required.' });
+    }
+
+    const users = loadJsonFile(USERS_FILE, []);
+    const user = users.find(u => normalizeEmail(u.email) === email);
+    if (!user || user.passwordHash !== hashPassword(password)) {
+      return res.status(401).json({ error: 'Invalid email or password.' });
+    }
+
+    const commandProfile = findCommandUserByEmail(email);
+    if (!commandProfile) {
+      return res.status(403).json({ error: 'Email is no longer authorized in Command_Users tab.' });
+    }
+
+    const sessions = loadJsonFile(SESSIONS_FILE, []);
+    const token = generateToken();
+    sessions.push({ token, email, createdAt: new Date().toISOString() });
+    saveJsonFile(SESSIONS_FILE, sessions);
+
+    return res.json({
+      ok: true,
+      token,
+      user: commandProfile,
+      message: 'Welcome back ' + commandProfile.characterName + ' (' + commandProfile.rank + ').'
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+app.get('/api/auth/me', (req, res) => {
+  const auth = getAuthFromRequest(req);
+  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+  res.json({ ok: true, user: auth });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  try {
+    const authHeader = String(req.headers.authorization || '');
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+    if (!token) return res.json({ ok: true });
+
+    const sessions = loadJsonFile(SESSIONS_FILE, []);
+    const filtered = sessions.filter(s => s && s.token !== token);
+    saveJsonFile(SESSIONS_FILE, filtered);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
 // API: list roster
 app.get('/api/roster', (req,res)=>{
   const data = loadJson();
@@ -525,7 +740,7 @@ app.get('/api/roster', (req,res)=>{
 });
 
 // API: add roster item
-app.post('/api/roster', (req,res)=>{
+app.post('/api/roster', requireAuth, (req,res)=>{
   const data = loadJson();
   const item = req.body || {};
   // Ensure an ID
@@ -536,7 +751,7 @@ app.post('/api/roster', (req,res)=>{
 });
 
 // API: update by ID
-app.put('/api/roster/:id', (req,res)=>{
+app.put('/api/roster/:id', requireAuth, (req,res)=>{
   const id = req.params.id;
   const data = loadJson();
   const idx = data.findIndex(x=>String(x.ID) === String(id));
@@ -547,7 +762,7 @@ app.put('/api/roster/:id', (req,res)=>{
 });
 
 // API: delete by ID
-app.delete('/api/roster/:id', (req,res)=>{
+app.delete('/api/roster/:id', requireAuth, (req,res)=>{
   const id = req.params.id;
   let data = loadJson();
   const before = data.length;
