@@ -32,10 +32,10 @@ FWPD COMMAND PORTAL
 
 <div class="sidebar">
 
-<a href="#" onclick="loadPage('dashboard'); return false;">Dashboard</a>
-<a href="#" onclick="loadPage('roster'); return false;">Officer Roster</a>
-<a href="#" onclick="loadPage('divisions'); return false;">Divisions</a>
-<a href="#" onclick="loadPage('discipline'); return false;">Discipline</a>
+<a href="#" data-page="dashboard">Dashboard</a>
+<a href="#" data-page="roster">Officer Roster</a>
+<a href="#" data-page="divisions">Divisions</a>
+<a href="#" data-page="discipline">Discipline</a>
 
 </div>
 
@@ -49,6 +49,21 @@ Welcome to the FWPD Command Portal.
 </div>
 
 <script src="app.js"></script>
+<script>
+// Ensure sidebar links are clickable
+document.addEventListener('DOMContentLoaded', function() {
+  const sidebarLinks = document.querySelectorAll('.sidebar a');
+  sidebarLinks.forEach(link => {
+    link.addEventListener('click', function(e) {
+      e.preventDefault();
+      const page = this.getAttribute('data-page');
+      if (page) {
+        loadPage(page);
+      }
+    });
+  });
+});
+</script>
 
 </body>
 
