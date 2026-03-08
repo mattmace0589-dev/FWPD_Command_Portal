@@ -699,13 +699,35 @@ async function createAccount() {
     return;
   }
 
-  try {
-    const response = await fetch('/api/auth/create-account', {
+  const submitCreate = async () => {
+    return fetch('/api/auth/create-account', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password })
     });
-    const data = await response.json();
+  };
+
+  try {
+    let response = await submitCreate();
+    let data = await response.json();
+
+    // If email lookup fails, try auto-linking command_users from setup URL and retry once.
+    if (!response.ok && /email not found in command_users/i.test(String(data.error || ''))) {
+      const setupUrlEl = document.getElementById('commandUsersUrl');
+      const setupUrl = String((setupUrlEl && setupUrlEl.value) || '').trim();
+      if (setupUrl) {
+        const linkResp = await fetch('/api/auth/link-command-users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: setupUrl })
+        });
+        if (linkResp.ok) {
+          response = await submitCreate();
+          data = await response.json();
+        }
+      }
+    }
+
     if (!response.ok) throw new Error(data.error || 'Create account failed');
 
     setAuthToken(data.token || '');
