@@ -7,6 +7,13 @@ const APP_BUILD = '20260308r';
 
 let currentUser = null;
 
+function formatUserDisplayName(user) {
+  const rank = String((user && user.rank) || '').trim();
+  const name = String((user && user.characterName) || '').trim();
+  if (rank && name) return rank + ' ' + name;
+  return name || rank || 'Officer';
+}
+
 function getAuthToken() {
   return localStorage.getItem(AUTH_TOKEN_KEY) || '';
 }
@@ -45,7 +52,7 @@ function showAuthBanner() {
   banner.style.letterSpacing = '0';
   banner.style.marginTop = '6px';
   banner.textContent = currentUser
-    ? ('Logged in as ' + (currentUser.characterName || 'Officer') + ' (' + (currentUser.rank || 'Unknown') + ')')
+    ? ('Logged in as ' + formatUserDisplayName(currentUser))
     : 'Not logged in';
 
   title.appendChild(banner);
@@ -215,6 +222,11 @@ document.getElementById("content").innerHTML = `
 
 <div id="welcomeMessage" style="margin-top:8px;color:#d8f3ff"></div>
 
+<div style="margin-top:20px">
+<b>Alerts</b>
+<pre id="dashboardAlerts" style="margin-top:8px;white-space:pre-wrap;background:rgba(0,0,0,.2);padding:10px;border:1px solid rgba(255,255,255,.2)">Loading alerts...</pre>
+</div>
+
 <div style="margin-top:30px">
 
 <b>Department Structure</b>
@@ -235,10 +247,11 @@ document.getElementById("content").innerHTML = `
 if (currentUser) {
   const welcome = document.getElementById('welcomeMessage');
   if (welcome) {
-    welcome.textContent = 'Welcome ' + (currentUser.characterName || 'Officer') + ' (' + (currentUser.rank || 'Unknown') + ').';
+    welcome.textContent = 'Welcome ' + formatUserDisplayName(currentUser) + '.';
   }
 }
 
+loadDashboardAlerts();
 loadSyncStatus();
 autoSyncOnLoad();
 
@@ -722,10 +735,84 @@ async function loginAccount() {
     setAuthToken(data.token || '');
     await refreshAuthSession();
     loadPage('dashboard');
-    if (status) status.textContent = data.message || 'Login successful.';
-    alert(data.message || 'Login successful.');
+    if (status) status.textContent = data.message || ('Login successful. Welcome ' + formatUserDisplayName(currentUser) + '.');
+    alert(data.message || ('Login successful. Welcome ' + formatUserDisplayName(currentUser) + '.'));
   } catch (err) {
     if (status) status.textContent = 'Login failed: ' + err.message;
+  }
+}
+
+function findBestField(row, aliases) {
+  const keys = Object.keys(row || {});
+  const normalized = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  for (const alias of aliases) {
+    const wanted = normalized(alias);
+    const key = keys.find(k => normalized(k) === wanted);
+    if (key) {
+      const val = String(row[key] || '').trim();
+      if (val) return val;
+    }
+  }
+  return '';
+}
+
+function rowLooksAlertLike(row) {
+  const text = Object.values(row || {}).join(' ').toLowerCase();
+  if (!text.trim()) return false;
+  const keywords = ['alert', 'flag', 'pending', 'review', 'open', 'attention', 'discipline', 'fail'];
+  return keywords.some(k => text.includes(k));
+}
+
+function mapAlertRow(source, row) {
+  const title = findBestField(row, ['title', 'subject', 'reason', 'type', 'status']) || (source + ' item');
+  const person = findBestField(row, ['rp_name', 'name', 'officer_name', 'cadet_name', 'character_name']);
+  const detail = findBestField(row, ['notes', 'message', 'comments', 'description', 'summary']);
+  const date = findBestField(row, ['date', 'created_date', 'created', 'last_updated', 'timestamp']);
+
+  let line = '[' + source + '] ' + title;
+  if (person) line += ' - ' + person;
+  if (date) line += ' (' + date + ')';
+  if (detail) line += '\n  ' + detail;
+  return line;
+}
+
+async function loadDashboardAlerts() {
+  const box = document.getElementById('dashboardAlerts');
+  if (!box) return;
+
+  try {
+    const tabsRes = await fetch('/api/sheets/tabs');
+    const tabs = await tabsRes.json();
+    if (!tabsRes.ok || !Array.isArray(tabs)) throw new Error('Failed to load tab list');
+
+    const sources = [
+      { key: 'discipline_records', label: 'Discipline' },
+      { key: 'cadet_evaluations', label: 'Cadet Evaluations' },
+      { key: 'officer_notes', label: 'Internal Messages' },
+      { key: 'internal_messages', label: 'Internal Messages' }
+    ];
+
+    const available = sources.filter(s => tabs.includes(s.key));
+    if (!available.length) {
+      box.textContent = 'No alert tabs imported yet.';
+      return;
+    }
+
+    const lines = [];
+    for (const src of available) {
+      const res = await fetch('/api/sheets/tab/' + encodeURIComponent(src.key));
+      const rows = await res.json();
+      if (!res.ok || !Array.isArray(rows) || !rows.length) continue;
+
+      const alertRows = rows.filter(rowLooksAlertLike).slice(0, 5);
+      if (!alertRows.length) continue;
+
+      alertRows.forEach(r => lines.push(mapAlertRow(src.label, r)));
+    }
+
+    box.textContent = lines.length ? lines.join('\n\n') : 'No active alerts.';
+  } catch (err) {
+    box.textContent = 'Alerts unavailable: ' + err.message;
   }
 }
 
