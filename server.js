@@ -184,15 +184,17 @@ function mapRosterRecords(records) {
       mapped.Callsign = '';
     }
 
-    // Only generate an ID when a meaningful row exists.
-    const hasMeaningfulData = [mapped.Name, mapped.Callsign, mapped.Rank, mapped.Division]
+    // Only generate an ID when a person identity exists.
+    // This avoids importing blank rows that only have default rank/division values.
+    const hasIdentity = [mapped.ID, mapped.Name, mapped.Callsign]
       .some(v => String(v || '').trim() !== '');
-    if (!mapped.ID && hasMeaningfulData) {
+    if (!mapped.ID && hasIdentity) {
       mapped.ID = 'AUTO-' + (Date.now() + idx);
     }
 
-    return mapped;
+    return hasIdentity ? mapped : null;
   }).filter(x => {
+    if (!x) return false;
     return String(x.ID).trim() !== '' ||
       String(x.Name).trim() !== '' ||
       String(x.Callsign).trim() !== '' ||
