@@ -177,7 +177,7 @@ async function loadRoster(){
 
 function showOfficerForm(id = null, data = {}) {
   const formHtml = `
-    <div id="officerForm" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:white;padding:20px;border:1px solid #ccc;z-index:1000;box-shadow:0 0 10px rgba(0,0,0,0.3);">
+    <div id="officerForm" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:white;color:#111;padding:20px;border:1px solid #ccc;z-index:1000;box-shadow:0 0 10px rgba(0,0,0,0.3);min-width:260px;">
       <h3>${id ? 'Edit' : 'Add'} Officer</h3>
       <label>ID: <input id="formID" value="${data.ID || ''}"></label><br>
       <label>Name: <input id="formName" value="${data.Name || ''}"></label><br>
@@ -278,7 +278,19 @@ async function syncGoogleSheets() {
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || 'Import failed');
 
-    alert('Import completed. Tabs: ' + result.result.map(x => `${x.name}: ${x.ok ? 'OK' : 'FAILED'}`).join(', '));
+    const rosterResult = (result.result || []).find(x => x.name === 'roster');
+    const tabSummary = (result.result || []).map(x => {
+      if (!x.ok) return `${x.name}: FAILED (${x.error || 'error'})`;
+      if (typeof x.rows === 'number') return `${x.name}: OK (${x.rows} rows)`;
+      return `${x.name}: OK`;
+    }).join(', ');
+
+    let message = 'Import completed. ' + tabSummary;
+    if (rosterResult && rosterResult.ok && Number(rosterResult.rows || 0) === 0) {
+      message += '\n\nRoster imported 0 rows. Confirm the roster tab has officer data and a Name/RP_Name or Callsign column.';
+    }
+
+    alert(message);
     loadRoster();
   } catch (err) {
     alert('Google sync failed: ' + err.message);

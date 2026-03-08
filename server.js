@@ -74,6 +74,41 @@ function sanitizeName(name) {
   return String(name || 'tab').toLowerCase().replace(/[^a-z0-9_-]/g, '_');
 }
 
+function normalizeGoogleCsvUrl(rawUrl) {
+  const input = String(rawUrl || '').trim();
+  if (!input) return '';
+
+  let parsed;
+  try {
+    parsed = new URL(input);
+  } catch (e) {
+    return input;
+  }
+
+  const host = String(parsed.hostname || '').toLowerCase();
+  const isGoogleSheet = host.includes('docs.google.com') && parsed.pathname.includes('/spreadsheets/');
+  if (!isGoogleSheet) return input;
+
+  const tqx = String(parsed.searchParams.get('tqx') || '').toLowerCase();
+  const output = String(parsed.searchParams.get('output') || '').toLowerCase();
+  if (tqx.includes('out:csv') || output === 'csv') return input;
+
+  const idMatch = parsed.pathname.match(/\/d\/([^/]+)/);
+  if (!idMatch || !idMatch[1]) return input;
+
+  let gid = parsed.searchParams.get('gid');
+  if (!gid && parsed.hash) {
+    const hash = parsed.hash.replace(/^#/, '');
+    const hashParams = new URLSearchParams(hash);
+    gid = hashParams.get('gid');
+  }
+
+  const csvUrl = new URL('https://docs.google.com/spreadsheets/d/' + idMatch[1] + '/gviz/tq');
+  csvUrl.searchParams.set('tqx', 'out:csv');
+  csvUrl.searchParams.set('gid', gid || '0');
+  return csvUrl.toString();
+}
+
 function saveTabJson(tabName, records) {
   ensureDataDir();
   const safe = sanitizeName(tabName);
@@ -247,7 +282,7 @@ app.post('/api/sheets/import', async (req, res) => {
 
     for (const tab of tabs) {
       const name = sanitizeName(tab && tab.name);
-      const url = String(tab && tab.url || '').trim();
+      const url = normalizeGoogleCsvUrl(String(tab && tab.url || '').trim());
       if (!name || !url) {
         result.push({ name: name || 'unknown', ok: false, error: 'Missing name or url' });
         continue;
