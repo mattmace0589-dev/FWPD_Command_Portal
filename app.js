@@ -3,7 +3,6 @@
 const AUTO_SYNC_SESSION_KEY = 'fwpd_auto_sync_done';
 const LOCAL_SYNC_TABS_KEY = 'fwpd_sync_tabs_v1';
 const AUTH_TOKEN_KEY = 'fwpd_auth_token';
-const AUTH_PROMPT_SESSION_KEY = 'fwpd_auth_prompt_shown';
 
 let currentUser = null;
 
@@ -51,46 +50,57 @@ function showAuthBanner() {
   title.appendChild(banner);
 }
 
-function closeAuthPrompt() {
-  const modal = document.getElementById('authPromptModal');
-  if (modal) modal.remove();
+function setAuthLockedLayout(locked) {
+  const sidebar = document.querySelector('.sidebar');
+  if (sidebar) sidebar.style.display = locked ? 'none' : 'block';
 }
 
-function showAuthPrompt() {
-  if (isLoggedIn()) return;
-  if (sessionStorage.getItem(AUTH_PROMPT_SESSION_KEY) === '1') return;
-  sessionStorage.setItem(AUTH_PROMPT_SESSION_KEY, '1');
+function renderLoginScreen(statusText = '') {
+  setAuthLockedLayout(true);
+  document.getElementById('content').innerHTML = `
+    <div style="max-width:680px;margin:20px auto;border:1px solid rgba(255,255,255,.25);padding:18px;background:rgba(0,0,0,.15)">
+      <h2>Command Login</h2>
+      <p>Only users listed in <b>Command_Users</b> can create accounts and log in.</p>
 
-  closeAuthPrompt();
-
-  const html = `
-    <div id="authPromptModal" style="position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;display:flex;align-items:center;justify-content:center;">
-      <div style="background:#ffffff;color:#111;padding:18px;border:1px solid #888;max-width:460px;width:90%;box-shadow:0 8px 20px rgba(0,0,0,.35)">
-        <h3 style="margin-top:0">Command Access</h3>
-        <p style="line-height:1.4">Create account or login using an email listed in <b>Command_Users</b>.</p>
-        <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;">
-          <button id="authOpenAccount">Open Login / Create Account</button>
-          <button id="authContinueViewer">Continue as Viewer</button>
-        </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin:10px 0 16px 0;">
+        <button id="showLoginPane">Login</button>
+        <button id="showCreatePane">Create Account</button>
       </div>
+
+      <div id="loginPane" style="display:block">
+        <h3>Login</h3>
+        <label>Email</label><br>
+        <input id="loginEmail" type="email" style="width:100%;max-width:360px"><br>
+        <label>Password</label><br>
+        <input id="loginPassword" type="password" style="width:100%;max-width:360px"><br><br>
+        <button id="loginBtn">Login</button>
+      </div>
+
+      <div id="createPane" style="display:none">
+        <h3>Create Account</h3>
+        <label>Email</label><br>
+        <input id="createEmail" type="email" style="width:100%;max-width:360px"><br>
+        <label>Password</label><br>
+        <input id="createPassword" type="password" style="width:100%;max-width:360px"><br><br>
+        <button id="createAccountBtn">Create Account</button>
+      </div>
+
+      <pre id="accountStatus" style="margin-top:14px;white-space:pre-wrap;background:rgba(0,0,0,.2);padding:10px;border:1px solid rgba(255,255,255,.2)">${statusText || 'Please login to continue.'}</pre>
     </div>
   `;
 
-  document.body.insertAdjacentHTML('beforeend', html);
-  const openBtn = document.getElementById('authOpenAccount');
-  const viewerBtn = document.getElementById('authContinueViewer');
-
-  if (openBtn) {
-    openBtn.addEventListener('click', () => {
-      closeAuthPrompt();
-      loadPage('account');
-    });
-  }
-  if (viewerBtn) {
-    viewerBtn.addEventListener('click', () => {
-      closeAuthPrompt();
-    });
-  }
+  const loginPane = document.getElementById('loginPane');
+  const createPane = document.getElementById('createPane');
+  document.getElementById('showLoginPane').addEventListener('click', () => {
+    loginPane.style.display = 'block';
+    createPane.style.display = 'none';
+  });
+  document.getElementById('showCreatePane').addEventListener('click', () => {
+    loginPane.style.display = 'none';
+    createPane.style.display = 'block';
+  });
+  document.getElementById('createAccountBtn').addEventListener('click', createAccount);
+  document.getElementById('loginBtn').addEventListener('click', loginAccount);
 }
 
 async function refreshAuthSession() {
@@ -98,6 +108,7 @@ async function refreshAuthSession() {
   if (!token) {
     currentUser = null;
     showAuthBanner();
+    renderLoginScreen();
     return;
   }
 
@@ -114,10 +125,7 @@ async function refreshAuthSession() {
     currentUser = null;
   }
   showAuthBanner();
-
-  if (!currentUser) {
-    showAuthPrompt();
-  }
+  if (!currentUser) renderLoginScreen();
 }
 
 function getLocalSyncTabs() {
@@ -141,6 +149,12 @@ function setLocalSyncTabs(tabs) {
 }
 
 function loadPage(page){
+if(!isLoggedIn()){
+renderLoginScreen();
+return;
+}
+
+setAuthLockedLayout(false);
 
 /* DASHBOARD */
 
@@ -217,46 +231,6 @@ document.getElementById("content").innerHTML = `
 `;
 
 }
-
-if(page === "account"){
-
-document.getElementById("content").innerHTML = `
-<h2>Account Access</h2>
-<p>Login is restricted to emails listed in the <b>Command_Users</b> tab.</p>
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;max-width:900px;">
-  <div style="border:1px solid rgba(255,255,255,.2);padding:14px;">
-    <h3>Create Account</h3>
-    <label>Email</label><br>
-    <input id="createEmail" type="email" style="width:100%;max-width:320px"><br>
-    <label>Password</label><br>
-    <input id="createPassword" type="password" style="width:100%;max-width:320px"><br><br>
-    <button id="createAccountBtn">Create Account</button>
-  </div>
-
-  <div style="border:1px solid rgba(255,255,255,.2);padding:14px;">
-    <h3>Login</h3>
-    <label>Email</label><br>
-    <input id="loginEmail" type="email" style="width:100%;max-width:320px"><br>
-    <label>Password</label><br>
-    <input id="loginPassword" type="password" style="width:100%;max-width:320px"><br><br>
-    <button id="loginBtn">Login</button>
-    <button id="logoutBtn" style="margin-left:8px">Logout</button>
-  </div>
-</div>
-<pre id="accountStatus" style="margin-top:14px;white-space:pre-wrap;background:rgba(0,0,0,.2);padding:10px;border:1px solid rgba(255,255,255,.2)"></pre>
-`;
-
-const status = document.getElementById('accountStatus');
-status.textContent = currentUser
-  ? ('Logged in: ' + (currentUser.characterName || 'Officer') + ' (' + (currentUser.rank || 'Unknown') + ')')
-  : 'Not logged in.';
-
-document.getElementById('createAccountBtn').addEventListener('click', createAccount);
-document.getElementById('loginBtn').addEventListener('click', loginAccount);
-document.getElementById('logoutBtn').addEventListener('click', logoutAccount);
-
-}
-
 
 /* OFFICER ROSTER */
 
@@ -645,6 +619,7 @@ async function createAccount() {
 
     setAuthToken(data.token || '');
     await refreshAuthSession();
+    loadPage('dashboard');
     if (status) status.textContent = data.message || 'Account created.';
     alert(data.message || 'Account created.');
   } catch (err) {
@@ -668,6 +643,7 @@ async function loginAccount() {
 
     setAuthToken(data.token || '');
     await refreshAuthSession();
+    loadPage('dashboard');
     if (status) status.textContent = data.message || 'Login successful.';
     alert(data.message || 'Login successful.');
   } catch (err) {
@@ -684,9 +660,7 @@ async function logoutAccount() {
   setAuthToken('');
   currentUser = null;
   showAuthBanner();
-  sessionStorage.removeItem(AUTH_PROMPT_SESSION_KEY);
-  const status = document.getElementById('accountStatus');
-  if (status) status.textContent = 'Logged out.';
+  renderLoginScreen('Logged out. Please login to continue.');
 }
 
 async function syncGoogleSheets() {
@@ -926,7 +900,5 @@ async function loadSheetTabData(name) {
     dataEl.textContent = 'Failed to load tab: ' + err.message;
   }
 }
-
-loadPage('dashboard');
 
 refreshAuthSession();
