@@ -316,8 +316,9 @@ function matchRawRecordToOfficer(raw, officer) {
 }
 
 async function enrichOfficerProfileData(officer) {
+  const hasImported = officer && officer.ImportedFields && Object.keys(officer.ImportedFields).length > 0;
   const hasCT = officer && officer.ColumnsCT && Object.keys(officer.ColumnsCT).length > 0;
-  if (hasCT) return officer;
+  if (hasImported && hasCT) return officer;
 
   try {
     const response = await fetch('/api/sheets/tab/roster');
@@ -328,6 +329,7 @@ async function enrichOfficerProfileData(officer) {
     if (!rawMatch) return officer;
 
     const merged = Object.assign({}, officer);
+    if (!hasImported) merged.ImportedFields = rawMatch;
     if (!hasCT) merged.ColumnsCT = computeColumnsCTFromRecord(rawMatch);
     return merged;
   } catch (e) {
@@ -338,10 +340,13 @@ async function enrichOfficerProfileData(officer) {
 function renderOfficerProfile(officer) {
   const profileId = pickOfficerField(officer, ['ID', 'id', 'Officer_ID', 'officer_id']);
   const profileName = pickOfficerField(officer, ['Name', 'name', 'RP_Name', 'rp_name', 'Officer_Name', 'officer_name']);
-  const columnsCT = (officer && officer.ColumnsCT && typeof officer.ColumnsCT === 'object')
-    ? officer.ColumnsCT
-    : ((officer && officer.ColumnsKT && typeof officer.ColumnsKT === 'object') ? officer.ColumnsKT : {});
-  const ctRows = Object.keys(columnsCT).map((k) => [k, columnsCT[k] || '-']);
+
+  const imported = (officer && officer.ImportedFields && typeof officer.ImportedFields === 'object')
+    ? officer.ImportedFields
+    : ((officer && officer.ColumnsCT && typeof officer.ColumnsCT === 'object') ? officer.ColumnsCT : {});
+  const importedRows = Object.keys(imported)
+    .filter((k) => String(imported[k] || '').trim() !== '')
+    .map((k) => [k, imported[k] || '-']);
 
   const rowsToTable = (rows) => {
     if (!rows.length) return '<p>No data available.</p>';
@@ -362,8 +367,8 @@ function renderOfficerProfile(officer) {
     <p><b>ID:</b> ${profileId || '-'}</p>
     <p><b>Name:</b> ${profileName || '-'}</p>
 
-    <h3 style="margin-top:18px;">Officer DB Columns C Through T</h3>
-    ${rowsToTable(ctRows)}
+    <h3 style="margin-top:18px;">All Imported Officer Data</h3>
+    ${rowsToTable(importedRows)}
   `;
 }
 
