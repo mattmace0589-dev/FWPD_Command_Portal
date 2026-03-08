@@ -49,21 +49,6 @@ Welcome to the FWPD Command Portal.
 </div>
 
 <script src="app.js"></script>
-<script>
-// Ensure sidebar links are clickable
-document.addEventListener('DOMContentLoaded', function() {
-  const sidebarLinks = document.querySelectorAll('.sidebar a');
-  sidebarLinks.forEach(link => {
-    link.addEventListener('click', function(e) {
-      e.preventDefault();
-      const page = this.getAttribute('data-page');
-      if (page) {
-        loadPage(page);
-      }
-    });
-  });
-});
-</script>
 
 </body>
 

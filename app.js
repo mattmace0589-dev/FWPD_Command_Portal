@@ -94,6 +94,10 @@ loadRoster();
 document.getElementById('refreshRoster').addEventListener('click', loadRoster);
 document.getElementById('addOfficer').addEventListener('click', () => showOfficerForm());
 
+}
+
+}
+
 
 /* ROSTER LOADER */
 
