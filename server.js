@@ -318,11 +318,28 @@ function pickField(obj, aliases) {
   return '';
 }
 
-function findCommandUserByEmail(email) {
+async function ensureCommandUsersLoaded() {
+  let records = getCommandUsersRecords();
+  if (records.length) return records;
+
+  const config = loadSheetsConfig();
+  const tabs = Array.isArray(config.tabs) ? config.tabs : [];
+  const commandTab = tabs.find(t => sanitizeName(t && t.name) === 'command_users' && String(t && t.url || '').trim());
+  if (!commandTab) return records;
+
+  try {
+    await importSheetsTabs([{ name: 'command_users', url: String(commandTab.url).trim() }]);
+    records = getCommandUsersRecords();
+    return records;
+  } catch (e) {
+    return records;
+  }
+}
+
+function findCommandUserByEmailFromRecords(email, records) {
   const normalized = normalizeEmail(email);
   if (!normalized) return null;
 
-  const records = getCommandUsersRecords();
   const row = records.find((r) => {
     const rowEmail = normalizeEmail(pickField(r, [
       'email',
@@ -354,6 +371,11 @@ function findCommandUserByEmail(email) {
   };
 }
 
+async function findCommandUserByEmail(email) {
+  const records = await ensureCommandUsersLoaded();
+  return findCommandUserByEmailFromRecords(email, records);
+}
+
 function getAuthFromRequest(req) {
   const authHeader = String(req.headers.authorization || '');
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
@@ -367,7 +389,7 @@ function getAuthFromRequest(req) {
   const user = users.find(u => normalizeEmail(u.email) === normalizeEmail(session.email));
   if (!user) return null;
 
-  const commandProfile = findCommandUserByEmail(user.email);
+  const commandProfile = findCommandUserByEmailFromRecords(user.email, getCommandUsersRecords());
   if (!commandProfile) return null;
 
   return {
@@ -648,7 +670,7 @@ function mapRosterRecords(records) {
   }).filter(Boolean);
 }
 
-app.post('/api/auth/create-account', (req, res) => {
+app.post('/api/auth/create-account', async (req, res) => {
   try {
     const email = normalizeEmail(req.body && req.body.email);
     const password = String(req.body && req.body.password || '');
@@ -660,7 +682,7 @@ app.post('/api/auth/create-account', (req, res) => {
       return res.status(400).json({ error: 'Password must be at least 6 characters.' });
     }
 
-    const commandProfile = findCommandUserByEmail(email);
+    const commandProfile = await findCommandUserByEmail(email);
     if (!commandProfile) {
       return res.status(403).json({ error: 'Email not found in Command_Users tab. Verify headers (Google Email, Name of Character/Name of Charac, Rank) and re-sync sheets.' });
     }
@@ -693,7 +715,7 @@ app.post('/api/auth/create-account', (req, res) => {
   }
 });
 
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
   try {
     const email = normalizeEmail(req.body && req.body.email);
     const password = String(req.body && req.body.password || '');
@@ -708,7 +730,7 @@ app.post('/api/auth/login', (req, res) => {
       return res.status(401).json({ error: 'Invalid email or password.' });
     }
 
-    const commandProfile = findCommandUserByEmail(email);
+    const commandProfile = await findCommandUserByEmail(email);
     if (!commandProfile) {
       return res.status(403).json({ error: 'Email is no longer authorized in Command_Users tab.' });
     }
