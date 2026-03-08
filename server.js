@@ -145,6 +145,84 @@ function normalizeGoogleCsvUrl(rawUrl) {
   return csvUrl.toString();
 }
 
+function getGoogleSheetId(urlText) {
+  const input = String(urlText || '').trim();
+  const m1 = input.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+  if (m1 && m1[1]) return m1[1];
+  const m2 = input.match(/\/spreadsheets\/d\/e\/([a-zA-Z0-9-_]+)/);
+  if (m2 && m2[1]) return m2[1];
+  return '';
+}
+
+function getGoogleGid(urlText) {
+  const input = String(urlText || '').trim();
+  try {
+    const u = new URL(input);
+    const gid = u.searchParams.get('gid');
+    if (gid) return gid;
+    if (u.hash) {
+      const hash = u.hash.replace(/^#/, '');
+      const params = new URLSearchParams(hash);
+      if (params.get('gid')) return params.get('gid');
+    }
+  } catch (e) {
+    // Ignore parse errors and fall back to default gid.
+  }
+  return '0';
+}
+
+function buildGoogleCsvCandidates(rawUrl) {
+  const original = String(rawUrl || '').trim();
+  const candidates = [];
+  if (!original) return candidates;
+  candidates.push(original);
+
+  const normalized = normalizeGoogleCsvUrl(original);
+  if (normalized && !candidates.includes(normalized)) candidates.push(normalized);
+
+  const sheetId = getGoogleSheetId(original);
+  const gid = getGoogleGid(original);
+  if (sheetId) {
+    const exportUrl = 'https://docs.google.com/spreadsheets/d/' + sheetId + '/export?format=csv&gid=' + encodeURIComponent(gid);
+    if (!candidates.includes(exportUrl)) candidates.push(exportUrl);
+
+    const gvizUrl = 'https://docs.google.com/spreadsheets/d/' + sheetId + '/gviz/tq?tqx=out:csv&gid=' + encodeURIComponent(gid);
+    if (!candidates.includes(gvizUrl)) candidates.push(gvizUrl);
+  }
+
+  return candidates;
+}
+
+async function fetchCsvWithFallback(rawUrl) {
+  const candidates = buildGoogleCsvCandidates(rawUrl);
+  let lastStatus = 0;
+  let lastStatusText = 'Unknown error';
+  let lastUrl = String(rawUrl || '');
+
+  for (const candidate of candidates) {
+    lastUrl = candidate;
+    const response = await fetch(candidate);
+    if (response.ok) {
+      const text = await response.text();
+      return { ok: true, csvText: text, urlUsed: candidate };
+    }
+    lastStatus = response.status;
+    lastStatusText = response.statusText;
+  }
+
+  const guidance = 'Google returned HTTP ' + lastStatus + ' for all link formats. ' +
+    'Verify the sheet/tab is published to web as CSV and accessible to anyone with the link.';
+
+  return {
+    ok: false,
+    error: guidance,
+    status: lastStatus,
+    statusText: lastStatusText,
+    urlTried: lastUrl,
+    candidates
+  };
+}
+
 function saveTabJson(tabName, records) {
   ensureDataDir();
   const safe = sanitizeName(tabName);
@@ -318,20 +396,26 @@ app.post('/api/sheets/import', async (req, res) => {
 
     for (const tab of tabs) {
       const name = sanitizeName(tab && tab.name);
-      const url = normalizeGoogleCsvUrl(String(tab && tab.url || '').trim());
+      const url = String(tab && tab.url || '').trim();
       if (!name || !url) {
         result.push({ name: name || 'unknown', ok: false, error: 'Missing name or url' });
         continue;
       }
 
       try {
-        const response = await fetch(url);
-        if (!response.ok) {
-          result.push({ name, ok: false, error: 'HTTP ' + response.status + ' ' + response.statusText });
+        const fetchResult = await fetchCsvWithFallback(url);
+        if (!fetchResult.ok) {
+          result.push({
+            name,
+            ok: false,
+            error: fetchResult.error,
+            status: fetchResult.status,
+            statusText: fetchResult.statusText
+          });
           continue;
         }
 
-        const csvText = await response.text();
+        const csvText = fetchResult.csvText;
         const records = toObjectsFromCSV(csvText);
         const sampleHeaders = records[0] ? Object.keys(records[0]) : [];
 
@@ -345,11 +429,12 @@ app.post('/api/sheets/import', async (req, res) => {
             rows: roster.length,
             parsedRows: records.length,
             headers: sampleHeaders,
+            sourceUrl: fetchResult.urlUsed,
             note: 'Roster replaced from sheet'
           });
         } else {
           saveTabJson(name, records);
-          result.push({ name, ok: true, rows: records.length, headers: sampleHeaders });
+          result.push({ name, ok: true, rows: records.length, headers: sampleHeaders, sourceUrl: fetchResult.urlUsed });
         }
       } catch (err) {
         result.push({ name, ok: false, error: err.message || String(err) });
