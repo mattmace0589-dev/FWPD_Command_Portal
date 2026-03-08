@@ -38,6 +38,10 @@ display:block;
 padding:15px;
 cursor:pointer;
 border-bottom:1px solid rgba(255,255,255,.1);
+color:white;
+text-decoration:none;
+font-size:14px;
+transition:background 0.3s;
 }
 
 .sidebar a:hover{
