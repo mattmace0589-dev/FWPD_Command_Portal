@@ -189,7 +189,6 @@ async function loadRoster(){
 
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td>${id}</td>
         <td>
           <button
             class="profile-link"
@@ -197,9 +196,10 @@ async function loadRoster(){
             data-name="${safeNameAttr}"
             data-callsign="${safeCallsignAttr}"
             onclick="openOfficerProfileFromRow(this)">
-            ${displayName}
+            ${id || '(No ID)'}
           </button>
         </td>
+        <td>${displayName}</td>
         <td>${callsign}</td>
         <td>${rank}</td>
         <td>${division}</td>
@@ -235,19 +235,36 @@ async function openOfficerProfile(criteria) {
     const data = await response.json();
     if (!response.ok) throw new Error('Failed to load roster data');
 
+    const pick = (obj, keys) => {
+      for (const key of keys) {
+        const val = String((obj && obj[key]) || '').trim();
+        if (val) return val;
+      }
+      return '';
+    };
+
     const id = String((criteria && criteria.id) || '').trim();
     const name = String((criteria && criteria.name) || '').trim();
     const callsign = String((criteria && criteria.callsign) || '').trim();
 
     let officer = null;
     if (id) {
-      officer = (data || []).find(x => String(x.ID || '').trim() === id);
+      officer = (data || []).find(x => {
+        const xId = pick(x, ['ID', 'id', 'Officer_ID', 'officer_id']);
+        return String(xId).trim() === id;
+      });
     }
     if (!officer && name) {
-      officer = (data || []).find(x => String(x.Name || '').trim().toLowerCase() === name.toLowerCase());
+      officer = (data || []).find(x => {
+        const xName = pick(x, ['Name', 'name', 'RP_Name', 'rp_name', 'Officer_Name', 'officer_name']);
+        return String(xName).trim().toLowerCase() === name.toLowerCase();
+      });
     }
     if (!officer && callsign) {
-      officer = (data || []).find(x => String(x.Callsign || '').trim().toLowerCase() === callsign.toLowerCase());
+      officer = (data || []).find(x => {
+        const xCallsign = pick(x, ['Callsign', 'callsign', 'Call_Sign', 'call_sign']);
+        return String(xCallsign).trim().toLowerCase() === callsign.toLowerCase();
+      });
     }
 
     if (!officer) {
