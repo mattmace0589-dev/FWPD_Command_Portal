@@ -299,7 +299,7 @@ async function syncGoogleSheets() {
     alert(message);
     loadRoster();
   } catch (err) {
-    alert('Google sync failed: ' + err.message);
+    alert('Google sync failed: ' + err.message + '\n\nUse a published CSV link or standard sheet link with correct tab gid.');
   }
 }
 

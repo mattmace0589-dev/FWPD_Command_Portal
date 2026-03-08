@@ -149,9 +149,13 @@ function getGoogleSheetId(urlText) {
   const input = String(urlText || '').trim();
   const m1 = input.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
   if (m1 && m1[1]) return m1[1];
-  const m2 = input.match(/\/spreadsheets\/d\/e\/([a-zA-Z0-9-_]+)/);
-  if (m2 && m2[1]) return m2[1];
   return '';
+}
+
+function getGooglePublishedKey(urlText) {
+  const input = String(urlText || '').trim();
+  const m = input.match(/\/spreadsheets\/d\/e\/([a-zA-Z0-9-_]+)/);
+  return (m && m[1]) ? m[1] : '';
 }
 
 function getGoogleGid(urlText) {
@@ -181,6 +185,7 @@ function buildGoogleCsvCandidates(rawUrl) {
   if (normalized && !candidates.includes(normalized)) candidates.push(normalized);
 
   const sheetId = getGoogleSheetId(original);
+  const pubKey = getGooglePublishedKey(original);
   const gid = getGoogleGid(original);
   if (sheetId) {
     const exportUrl = 'https://docs.google.com/spreadsheets/d/' + sheetId + '/export?format=csv&gid=' + encodeURIComponent(gid);
@@ -188,6 +193,11 @@ function buildGoogleCsvCandidates(rawUrl) {
 
     const gvizUrl = 'https://docs.google.com/spreadsheets/d/' + sheetId + '/gviz/tq?tqx=out:csv&gid=' + encodeURIComponent(gid);
     if (!candidates.includes(gvizUrl)) candidates.push(gvizUrl);
+  }
+
+  if (pubKey) {
+    const publishedCsvUrl = 'https://docs.google.com/spreadsheets/d/e/' + pubKey + '/pub?output=csv&gid=' + encodeURIComponent(gid);
+    if (!candidates.includes(publishedCsvUrl)) candidates.push(publishedCsvUrl);
   }
 
   return candidates;
