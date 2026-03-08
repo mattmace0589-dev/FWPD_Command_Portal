@@ -672,6 +672,20 @@ function saveJson(data){
   fs.writeFileSync(JSON_FILE, JSON.stringify(data,null,2));
 }
 
+function getRosterRecordId(record) {
+  const candidates = [
+    record && record.ID,
+    record && record.id,
+    record && record.Officer_ID,
+    record && record.officer_id
+  ];
+  for (const value of candidates) {
+    const text = String(value || '').trim();
+    if (text) return text;
+  }
+  return '';
+}
+
 function loadSheetsConfig() {
   const envTabs = getDefaultTabsFromEnv();
 
@@ -1241,7 +1255,7 @@ app.post('/api/roster', requireAuth, (req,res)=>{
   const data = loadJson();
   const item = req.body || {};
   // Ensure an ID
-  item.ID = item.ID || String(Date.now());
+  item.ID = getRosterRecordId(item) || String(Date.now());
   data.push(item);
   saveJson(data);
   res.status(201).json(item);
@@ -1251,9 +1265,10 @@ app.post('/api/roster', requireAuth, (req,res)=>{
 app.put('/api/roster/:id', requireAuth, (req,res)=>{
   const id = req.params.id;
   const data = loadJson();
-  const idx = data.findIndex(x=>String(x.ID) === String(id));
+  const idx = data.findIndex(x=>getRosterRecordId(x) === String(id));
   if (idx === -1) return res.status(404).json({error:'Not found'});
   data[idx] = Object.assign({}, data[idx], req.body);
+  if (!getRosterRecordId(data[idx])) data[idx].ID = String(id);
   saveJson(data);
   res.json(data[idx]);
 });
@@ -1263,7 +1278,7 @@ app.delete('/api/roster/:id', requireAuth, (req,res)=>{
   const id = req.params.id;
   let data = loadJson();
   const before = data.length;
-  data = data.filter(x=>String(x.ID) !== String(id));
+  data = data.filter(x=>getRosterRecordId(x) !== String(id));
   saveJson(data);
   res.json({deleted: before - data.length});
 });
