@@ -182,18 +182,30 @@ async function loadRoster(){
       const hasIdentity = !!(id || name || callsign);
       if (!hasIdentity) return;
 
-      const safeId = String(id).replace(/'/g, "\\'");
       const displayName = name || '(No Name)';
+      const safeIdAttr = String(id || '').replace(/"/g, '&quot;');
+      const safeNameAttr = String(name || '').replace(/"/g, '&quot;');
+      const safeCallsignAttr = String(callsign || '').replace(/"/g, '&quot;');
 
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td>${id}</td>
-        <td><button class="profile-link" onclick="openOfficerProfile('${safeId}')">${displayName}</button></td>
+        <td>
+          <button
+            class="profile-link"
+            data-id="${safeIdAttr}"
+            data-name="${safeNameAttr}"
+            data-callsign="${safeCallsignAttr}"
+            onclick="openOfficerProfileFromRow(this)">
+            ${displayName}
+          </button>
+        </td>
         <td>${callsign}</td>
         <td>${rank}</td>
         <td>${division}</td>
         <td class="actions-cell">
           <div class="row-actions">
+            <button data-id="${safeIdAttr}" data-name="${safeNameAttr}" data-callsign="${safeCallsignAttr}" onclick="openOfficerProfileFromRow(this)">Profile</button>
             <button onclick="editOfficer('${id}')">Edit</button>
             <button onclick="deleteOfficer('${id}')">Delete</button>
           </div>
@@ -209,13 +221,35 @@ async function loadRoster(){
   }
 }
 
-async function openOfficerProfile(id) {
+async function openOfficerProfileFromRow(el) {
+  const id = String((el && el.dataset && el.dataset.id) || '').trim();
+  const name = String((el && el.dataset && el.dataset.name) || '').trim();
+  const callsign = String((el && el.dataset && el.dataset.callsign) || '').trim();
+
+  return openOfficerProfile({ id, name, callsign });
+}
+
+async function openOfficerProfile(criteria) {
   try {
     const response = await fetch('/api/roster');
     const data = await response.json();
     if (!response.ok) throw new Error('Failed to load roster data');
 
-    const officer = (data || []).find(x => String(x.ID || '') === String(id || ''));
+    const id = String((criteria && criteria.id) || '').trim();
+    const name = String((criteria && criteria.name) || '').trim();
+    const callsign = String((criteria && criteria.callsign) || '').trim();
+
+    let officer = null;
+    if (id) {
+      officer = (data || []).find(x => String(x.ID || '').trim() === id);
+    }
+    if (!officer && name) {
+      officer = (data || []).find(x => String(x.Name || '').trim().toLowerCase() === name.toLowerCase());
+    }
+    if (!officer && callsign) {
+      officer = (data || []).find(x => String(x.Callsign || '').trim().toLowerCase() === callsign.toLowerCase());
+    }
+
     if (!officer) {
       alert('Officer profile not found. Try refreshing the roster.');
       return;

@@ -295,20 +295,56 @@ function saveJson(data){
 }
 
 function loadSheetsConfig() {
+  const envTabs = getDefaultTabsFromEnv();
+
   ensureDataDir();
   if (!fs.existsSync(SHEETS_CONFIG_FILE)) {
-    return { tabs: [], autoSyncOnLoad: false, lastSync: null };
+    return { tabs: envTabs, autoSyncOnLoad: envTabs.length > 0, lastSync: null };
   }
   try {
     const parsed = JSON.parse(fs.readFileSync(SHEETS_CONFIG_FILE, 'utf8') || '{}');
+    const fileTabs = Array.isArray(parsed.tabs) ? parsed.tabs : [];
+    const tabs = fileTabs.length ? fileTabs : envTabs;
     return {
-      tabs: Array.isArray(parsed.tabs) ? parsed.tabs : [],
-      autoSyncOnLoad: !!parsed.autoSyncOnLoad,
+      tabs,
+      autoSyncOnLoad: typeof parsed.autoSyncOnLoad === 'boolean' ? parsed.autoSyncOnLoad : tabs.length > 0,
       lastSync: parsed.lastSync || null
     };
   } catch (e) {
-    return { tabs: [], autoSyncOnLoad: false, lastSync: null };
+    return { tabs: envTabs, autoSyncOnLoad: envTabs.length > 0, lastSync: null };
   }
+}
+
+function getDefaultTabsFromEnv() {
+  const tabs = [];
+  const rosterUrl = String(process.env.DEFAULT_ROSTER_URL || '').trim();
+  if (rosterUrl) {
+    tabs.push({ name: 'roster', url: rosterUrl });
+  }
+
+  const rawExtra = String(process.env.DEFAULT_SHEETS_TABS || '').trim();
+  if (rawExtra) {
+    try {
+      const parsed = JSON.parse(rawExtra);
+      if (Array.isArray(parsed)) {
+        parsed.forEach((t) => {
+          const name = sanitizeName(t && t.name);
+          const url = String(t && t.url || '').trim();
+          if (name && url) tabs.push({ name, url });
+        });
+      }
+    } catch (e) {
+      // Ignore invalid env JSON.
+    }
+  }
+
+  // Keep unique by tab name, first wins.
+  const seen = new Set();
+  return tabs.filter((t) => {
+    if (seen.has(t.name)) return false;
+    seen.add(t.name);
+    return true;
+  });
 }
 
 function saveSheetsConfig(config) {
