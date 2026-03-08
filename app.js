@@ -287,34 +287,14 @@ function pickOfficerField(obj, keys) {
   return '';
 }
 
-function computeColumnsKTFromRecord(record) {
+function computeColumnsCTFromRecord(record) {
   const output = {};
   const keys = Object.keys(record || {});
 
-  const fieldDefs = [
-    { label: 'Sub Division_1', keys: ['Sub Division_1', 'Sub_Division_1', 'sub_division_1'] },
-    { label: 'Sub Division_2', keys: ['Sub Division_2', 'Sub_Division_2', 'sub_division_2'] },
-    { label: 'Supervisor', keys: ['Supervisor', 'supervisor'] },
-    { label: 'Status', keys: ['Status', 'status'] },
-    { label: 'Activity_Status', keys: ['Activity_Status', 'Activity Status', 'activity_status'] },
-    { label: 'Hire_Date', keys: ['Hire_Date', 'Hire Date', 'hire_date'] },
-    { label: 'Notes_Flag', keys: ['Notes_Flag', 'Notes Flag', 'notes_flag'] },
-    { label: 'Discipline_Flag', keys: ['Discipline_Flag', 'Discipline Flag', 'discipline_flag'] },
-    { label: 'Created_Date', keys: ['Created_Date', 'Created Date', 'created_date'] },
-    { label: 'Last_Updated', keys: ['Last_Updated', 'Last Updated', 'last_updated'] }
-  ];
-
-  fieldDefs.forEach((f) => {
-    output[f.label] = pickOfficerField(record, f.keys);
-  });
-
-  // If preferred headers are empty/missing, fall back to positional K-T.
-  const hasAnyPreferred = Object.values(output).some(v => String(v || '').trim() !== '');
-  if (!hasAnyPreferred) {
-    for (let i = 10; i <= 19; i++) {
-      const key = keys[i] || ('Column ' + String.fromCharCode(65 + i));
-      output[key] = String((record && record[key]) || '').trim();
-    }
+  // Columns C through T are zero-based indexes 2..19.
+  for (let i = 2; i <= 19; i++) {
+    const key = keys[i] || ('Column ' + String.fromCharCode(65 + i));
+    output[key] = String((record && record[key]) || '').trim();
   }
 
   return output;
@@ -325,9 +305,9 @@ function matchRawRecordToOfficer(raw, officer) {
   const rawName = pickOfficerField(raw, ['Name', 'name', 'RP_Name', 'rp_name', 'Officer_Name', 'officer_name']);
   const rawCallsign = pickOfficerField(raw, ['Callsign', 'callsign', 'Call_Sign', 'call_sign']);
 
-  const offId = String(officer.ID || '').trim();
-  const offName = String(officer.Name || '').trim().toLowerCase();
-  const offCallsign = String(officer.Callsign || '').trim().toLowerCase();
+  const offId = pickOfficerField(officer, ['ID', 'id', 'Officer_ID', 'officer_id']);
+  const offName = pickOfficerField(officer, ['Name', 'name', 'RP_Name', 'rp_name', 'Officer_Name', 'officer_name']).toLowerCase();
+  const offCallsign = pickOfficerField(officer, ['Callsign', 'callsign', 'Call_Sign', 'call_sign']).toLowerCase();
 
   if (offId && rawId && String(rawId).trim() === offId) return true;
   if (offName && rawName && String(rawName).trim().toLowerCase() === offName) return true;
@@ -336,9 +316,8 @@ function matchRawRecordToOfficer(raw, officer) {
 }
 
 async function enrichOfficerProfileData(officer) {
-  const hasImported = officer && officer.ImportedFields && Object.keys(officer.ImportedFields).length > 0;
-  const hasKT = officer && officer.ColumnsKT && Object.keys(officer.ColumnsKT).length > 0;
-  if (hasImported && hasKT) return officer;
+  const hasCT = officer && officer.ColumnsCT && Object.keys(officer.ColumnsCT).length > 0;
+  if (hasCT) return officer;
 
   try {
     const response = await fetch('/api/sheets/tab/roster');
@@ -349,8 +328,7 @@ async function enrichOfficerProfileData(officer) {
     if (!rawMatch) return officer;
 
     const merged = Object.assign({}, officer);
-    if (!hasImported) merged.ImportedFields = rawMatch;
-    if (!hasKT) merged.ColumnsKT = computeColumnsKTFromRecord(rawMatch);
+    if (!hasCT) merged.ColumnsCT = computeColumnsCTFromRecord(rawMatch);
     return merged;
   } catch (e) {
     return officer;
@@ -358,25 +336,12 @@ async function enrichOfficerProfileData(officer) {
 }
 
 function renderOfficerProfile(officer) {
-  const coreRows = [
-    ['ID', officer.ID || ''],
-    ['Name', officer.Name || ''],
-    ['Callsign', officer.Callsign || ''],
-    ['Rank', officer.Rank || ''],
-    ['Division', officer.Division || '']
-  ];
-
-  const imported = (officer && officer.ImportedFields && typeof officer.ImportedFields === 'object')
-    ? officer.ImportedFields
-    : {};
-  const importedRows = Object.keys(imported)
-    .filter((k) => String(imported[k] || '').trim() !== '')
-    .map((k) => [k, imported[k]]);
-
-  const columnsKT = (officer && officer.ColumnsKT && typeof officer.ColumnsKT === 'object')
-    ? officer.ColumnsKT
-    : ((officer && officer.ColumnsNT && typeof officer.ColumnsNT === 'object') ? officer.ColumnsNT : {});
-  const ktRows = Object.keys(columnsKT).map((k) => [k, columnsKT[k] || '-']);
+  const profileId = pickOfficerField(officer, ['ID', 'id', 'Officer_ID', 'officer_id']);
+  const profileName = pickOfficerField(officer, ['Name', 'name', 'RP_Name', 'rp_name', 'Officer_Name', 'officer_name']);
+  const columnsCT = (officer && officer.ColumnsCT && typeof officer.ColumnsCT === 'object')
+    ? officer.ColumnsCT
+    : ((officer && officer.ColumnsKT && typeof officer.ColumnsKT === 'object') ? officer.ColumnsKT : {});
+  const ctRows = Object.keys(columnsCT).map((k) => [k, columnsCT[k] || '-']);
 
   const rowsToTable = (rows) => {
     if (!rows.length) return '<p>No data available.</p>';
@@ -394,14 +359,11 @@ function renderOfficerProfile(officer) {
       <button onclick="loadPage('roster')">Back to Roster</button>
     </div>
 
-    <h3>Core Information</h3>
-    ${rowsToTable(coreRows)}
+    <p><b>ID:</b> ${profileId || '-'}</p>
+    <p><b>Name:</b> ${profileName || '-'}</p>
 
-    <h3 style="margin-top:18px;">Columns K Through T</h3>
-    ${rowsToTable(ktRows)}
-
-    <h3 style="margin-top:18px;">All Imported Officer Data</h3>
-    ${rowsToTable(importedRows)}
+    <h3 style="margin-top:18px;">Officer DB Columns C Through T</h3>
+    ${rowsToTable(ctRows)}
   `;
 }
 
