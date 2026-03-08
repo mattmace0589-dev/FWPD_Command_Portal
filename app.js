@@ -258,31 +258,27 @@ autoSyncOnLoad();
 }
 
 
-/* DIVISIONS */
+/* REPORTS */
 
-if(page === "divisions"){
+if(page === "reports"){
 
 document.getElementById("content").innerHTML = `
-<h2>Department Divisions</h2>
+<h2>Reports</h2>
+<p>Command review center for discipline, cadet evaluations, and internal messages.</p>
 
-<ul>
-<li>Adam Division</li>
-<li>Nora Division</li>
-</ul>
+<div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;">
+  <button onclick="loadPage('sheettabs')">Open Sheet Tabs</button>
+</div>
 
-<p style="margin-top:20px;">
-Subdivisions such as CIU, MBU, K9, Detectives, Air-1, Air-2 and Drone Surveillance
-are assigned through officer qualification and command approval.
-</p>
+<pre id="reportsSummary" style="margin-top:14px;white-space:pre-wrap;background:rgba(0,0,0,.2);padding:10px;border:1px solid rgba(255,255,255,.2)">Loading reports summary...</pre>
 `;
+
+loadReportsSummary();
 
 }
 
 
-/* DISCIPLINE */
-
-if(page === "discipline"){
-
+/* ACCOUNT */
 
 if(page === "account"){
 
@@ -307,13 +303,6 @@ document.getElementById("content").innerHTML = `
 `;
 
 document.getElementById('logoutBtn').addEventListener('click', logoutAccount);
-
-}
-document.getElementById("content").innerHTML = `
-<h2>Discipline Records</h2>
-
-<p>Command staff can review disciplinary records here.</p>
-`;
 
 }
 
@@ -830,6 +819,46 @@ async function loadDashboardAlerts() {
     box.textContent = lines.length ? lines.join('\n\n') : ('No alert records found. Tabs checked: ' + available.map(x => x.key).join(', '));
   } catch (err) {
     box.textContent = 'Alerts unavailable: ' + err.message;
+  }
+}
+
+async function loadReportsSummary() {
+  const box = document.getElementById('reportsSummary');
+  if (!box) return;
+
+  try {
+    const tabsRes = await fetch('/api/sheets/tabs');
+    const tabs = await tabsRes.json();
+    if (!tabsRes.ok || !Array.isArray(tabs)) throw new Error('Failed to load sheet tabs');
+
+    const sources = [
+      { key: 'discipline_records', label: 'Discipline Reports' },
+      { key: 'cadet_evaluations', label: 'Cadet Evaluations' },
+      { key: 'officer_notes', label: 'Internal Messages' },
+      { key: 'internal_messages', label: 'Internal Messages (Alt Tab)' }
+    ];
+
+    const lines = [];
+    for (const src of sources) {
+      if (!tabs.includes(src.key)) {
+        lines.push(src.label + ': not imported');
+        continue;
+      }
+
+      const res = await fetch('/api/sheets/tab/' + encodeURIComponent(src.key));
+      const rows = await res.json();
+      if (!res.ok || !Array.isArray(rows)) {
+        lines.push(src.label + ': failed to load');
+      } else {
+        lines.push(src.label + ': ' + rows.length + ' records');
+      }
+    }
+
+    lines.push('');
+    lines.push('Step 2 next: approval workflow with approver + timestamp on discipline/eval actions.');
+    box.textContent = lines.join('\n');
+  } catch (err) {
+    box.textContent = 'Reports summary unavailable: ' + err.message;
   }
 }
 
