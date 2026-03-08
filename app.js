@@ -72,6 +72,7 @@ document.getElementById("content").innerHTML = `
 <div style="margin:8px 0">
   <button id="addOfficer">Add Officer</button>
   <button id="refreshRoster">Refresh</button>
+  <button id="syncSheets">Sync Google Sheets</button>
 </div>
 <table id="rosterTable">
 <thead>
@@ -93,6 +94,21 @@ loadRoster();
 
 document.getElementById('refreshRoster').addEventListener('click', loadRoster);
 document.getElementById('addOfficer').addEventListener('click', () => showOfficerForm());
+document.getElementById('syncSheets').addEventListener('click', syncGoogleSheets);
+
+}
+
+
+if(page === "sheettabs"){
+
+document.getElementById("content").innerHTML = `
+<h2>Sheet Tabs</h2>
+<p>Imported tabs from Google Sheets will appear here.</p>
+<div id="sheetTabsList">Loading tabs...</div>
+<div id="sheetTabData" style="margin-top:16px"></div>
+`;
+
+loadSheetTabs();
 
 }
 
@@ -204,5 +220,101 @@ async function deleteOfficer(id) {
     loadRoster();
   } catch (err) {
     alert('Error deleting: ' + err.message);
+  }
+}
+
+async function syncGoogleSheets() {
+  const rosterURL = prompt('Paste Roster CSV URL (published Google Sheets CSV link):');
+  if (!rosterURL) return;
+
+  const otherTabsInput = prompt(
+    'Optional: add other tabs as comma-separated Name|CSV_URL entries.\nExample:\ndivisions|https://...csv,discipline|https://...csv'
+  ) || '';
+
+  const tabs = [{ name: 'roster', url: rosterURL.trim() }];
+
+  if (otherTabsInput.trim()) {
+    otherTabsInput.split(',').forEach(pair => {
+      const parts = pair.split('|');
+      if (parts.length >= 2) {
+        const name = parts[0].trim();
+        const url = parts.slice(1).join('|').trim();
+        if (name && url) tabs.push({ name, url });
+      }
+    });
+  }
+
+  try {
+    const response = await fetch('/api/sheets/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tabs })
+    });
+
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Import failed');
+
+    alert('Import completed. Tabs: ' + result.result.map(x => `${x.name}: ${x.ok ? 'OK' : 'FAILED'}`).join(', '));
+    loadRoster();
+  } catch (err) {
+    alert('Google sync failed: ' + err.message);
+  }
+}
+
+async function loadSheetTabs() {
+  const listEl = document.getElementById('sheetTabsList');
+  const dataEl = document.getElementById('sheetTabData');
+
+  try {
+    const response = await fetch('/api/sheets/tabs');
+    const tabs = await response.json();
+    if (!Array.isArray(tabs) || !tabs.length) {
+      listEl.textContent = 'No imported tabs yet. Use Officer Roster > Sync Google Sheets.';
+      return;
+    }
+
+    listEl.innerHTML = '';
+    tabs.forEach(name => {
+      const btn = document.createElement('button');
+      btn.textContent = 'View ' + name;
+      btn.style.marginRight = '8px';
+      btn.style.marginBottom = '8px';
+      btn.addEventListener('click', () => loadSheetTabData(name));
+      listEl.appendChild(btn);
+    });
+
+    dataEl.textContent = 'Select a tab to preview.';
+  } catch (err) {
+    listEl.textContent = 'Failed to load tabs: ' + err.message;
+  }
+}
+
+async function loadSheetTabData(name) {
+  const dataEl = document.getElementById('sheetTabData');
+  try {
+    const response = await fetch('/api/sheets/tab/' + encodeURIComponent(name));
+    const rows = await response.json();
+    if (!response.ok) throw new Error(rows.error || 'Failed to load tab');
+
+    if (!Array.isArray(rows) || !rows.length) {
+      dataEl.textContent = 'No rows found in ' + name;
+      return;
+    }
+
+    const cols = Object.keys(rows[0]);
+    let html = '<h3>' + name + '</h3><table><thead><tr>';
+    cols.forEach(c => { html += '<th>' + c + '</th>'; });
+    html += '</tr></thead><tbody>';
+
+    rows.slice(0, 100).forEach(r => {
+      html += '<tr>';
+      cols.forEach(c => { html += '<td>' + (r[c] || '') + '</td>'; });
+      html += '</tr>';
+    });
+
+    html += '</tbody></table><p>Showing up to first 100 rows.</p>';
+    dataEl.innerHTML = html;
+  } catch (err) {
+    dataEl.textContent = 'Failed to load tab: ' + err.message;
   }
 }

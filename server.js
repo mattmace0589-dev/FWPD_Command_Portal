@@ -16,6 +16,72 @@ const DATA_DIR = path.join(__dirname, 'data');
 const JSON_FILE = path.join(DATA_DIR, 'roster.json');
 const CSV_FILE = path.join(__dirname, 'roster.csv');
 
+function parseCSV(text) {
+  const rows = [];
+  let cur = '';
+  let row = [];
+  let inQuotes = false;
+  const normalized = String(text || '').replace(/\uFEFF/g, '');
+
+  for (let i = 0; i < normalized.length; i++) {
+    const ch = normalized[i];
+    const next = normalized[i + 1];
+
+    if (ch === '"') {
+      if (inQuotes && next === '"') {
+        cur += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (ch === ',' && !inQuotes) {
+      row.push(cur);
+      cur = '';
+    } else if ((ch === '\n' || ch === '\r') && !inQuotes) {
+      if (ch === '\r' && next === '\n') i++;
+      row.push(cur);
+      rows.push(row);
+      row = [];
+      cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+
+  if (cur !== '' || row.length) {
+    row.push(cur);
+    rows.push(row);
+  }
+
+  return rows.filter(r => r.some(c => String(c || '').trim() !== ''));
+}
+
+function toObjectsFromCSV(csvText) {
+  const rows = parseCSV(csvText);
+  if (!rows.length) return [];
+
+  const header = rows[0].map(h => String(h || '').trim() || 'col');
+  return rows.slice(1).map(r => {
+    const obj = {};
+    header.forEach((h, idx) => {
+      obj[h] = String(r[idx] || '').trim();
+    });
+    return obj;
+  }).filter(obj => Object.values(obj).some(v => String(v).trim() !== ''));
+}
+
+function sanitizeName(name) {
+  return String(name || 'tab').toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+}
+
+function saveTabJson(tabName, records) {
+  ensureDataDir();
+  const safe = sanitizeName(tabName);
+  const filePath = path.join(DATA_DIR, safe + '.json');
+  fs.writeFileSync(filePath, JSON.stringify(records, null, 2));
+  return filePath;
+}
+
 function ensureDataDir(){
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
 }
@@ -51,6 +117,19 @@ function loadJson(){
 function saveJson(data){
   ensureDataDir();
   fs.writeFileSync(JSON_FILE, JSON.stringify(data,null,2));
+}
+
+function mapRosterRecords(records) {
+  return records.map((r, idx) => {
+    const keys = Object.keys(r);
+    return {
+      ID: r.ID || r.Id || r.id || r[keys[0]] || String(Date.now() + idx),
+      Name: r.Name || r.name || r[keys[1]] || '',
+      Callsign: r.Callsign || r.callsign || r.Callsigns || r[keys[2]] || '',
+      Rank: r.Rank || r.rank || r[keys[3]] || '',
+      Division: r.Division || r.division || r[keys[4]] || ''
+    };
+  }).filter(x => String(x.ID).trim() !== '' || String(x.Name).trim() !== '');
 }
 
 // API: list roster
@@ -89,6 +168,83 @@ app.delete('/api/roster/:id', (req,res)=>{
   data = data.filter(x=>String(x.ID) !== String(id));
   saveJson(data);
   res.json({deleted: before - data.length});
+});
+
+// Import one or many Google Sheet CSV tabs server-side (avoids browser CORS issues)
+// Body format:
+// {
+//   "tabs": [
+//     {"name":"roster","url":"https://...output=csv"},
+//     {"name":"divisions","url":"https://...output=csv"}
+//   ]
+// }
+app.post('/api/sheets/import', async (req, res) => {
+  try {
+    const tabs = Array.isArray(req.body && req.body.tabs) ? req.body.tabs : [];
+    if (!tabs.length) {
+      return res.status(400).json({ error: 'No tabs provided. Send body: { tabs: [{name,url}] }' });
+    }
+
+    const result = [];
+
+    for (const tab of tabs) {
+      const name = sanitizeName(tab && tab.name);
+      const url = String(tab && tab.url || '').trim();
+      if (!name || !url) {
+        result.push({ name: name || 'unknown', ok: false, error: 'Missing name or url' });
+        continue;
+      }
+
+      try {
+        const response = await fetch(url);
+        if (!response.ok) {
+          result.push({ name, ok: false, error: 'HTTP ' + response.status + ' ' + response.statusText });
+          continue;
+        }
+
+        const csvText = await response.text();
+        const records = toObjectsFromCSV(csvText);
+
+        if (name === 'roster') {
+          const roster = mapRosterRecords(records);
+          saveJson(roster);
+          saveTabJson(name, records);
+          result.push({ name, ok: true, rows: roster.length, note: 'Roster replaced from sheet' });
+        } else {
+          saveTabJson(name, records);
+          result.push({ name, ok: true, rows: records.length });
+        }
+      } catch (err) {
+        result.push({ name, ok: false, error: err.message || String(err) });
+      }
+    }
+
+    return res.json({ ok: true, result });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+app.get('/api/sheets/tabs', (req, res) => {
+  ensureDataDir();
+  const files = fs.readdirSync(DATA_DIR)
+    .filter(f => f.endsWith('.json'))
+    .map(f => f.replace(/\.json$/, ''));
+  res.json(files);
+});
+
+app.get('/api/sheets/tab/:name', (req, res) => {
+  const safe = sanitizeName(req.params.name);
+  const filePath = path.join(DATA_DIR, safe + '.json');
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: 'Tab not found' });
+  }
+  try {
+    const data = JSON.parse(fs.readFileSync(filePath, 'utf8') || '[]');
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message || String(err) });
+  }
 });
 
 app.listen(PORT, ()=>{
