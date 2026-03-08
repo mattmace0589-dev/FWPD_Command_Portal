@@ -6,12 +6,13 @@ const AUTH_TOKEN_KEY = 'fwpd_auth_token';
 const DISCIPLINE_SOURCE_URL_KEY = 'fwpd_discipline_source_url';
 const EVALUATION_SOURCE_URL_KEY = 'fwpd_evaluation_source_url';
 const DEFAULT_EVALUATION_SOURCE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR6_40O35zd-9GMo_nTg5KS76Svzt1P8ZKrfBQwPAtLloGFtpE1r4JBP3t-F-meLlDKCpvWzZkhMlOb/pub?output=csv&gid=1513386776';
-const APP_BUILD = '20260308z3';
+const APP_BUILD = '20260308z4';
 const MESSAGE_POLL_MS = 45000;
 
 let currentUser = null;
 let unreadMessageCount = 0;
 let messagePollTimer = null;
+let lastLoadedReportItems = [];
 
 function formatUserDisplayName(user) {
   const rank = String((user && user.rank) || '').trim();
@@ -421,6 +422,11 @@ document.getElementById("content").innerHTML = `
     </thead>
     <tbody></tbody>
   </table>
+</div>
+
+<div style="margin-top:12px;border:1px solid rgba(255,255,255,.2);padding:10px;background:rgba(0,0,0,.15)">
+  <b>Selected Report Details</b>
+  <pre id="reportDetailsBox" style="margin-top:8px;white-space:pre-wrap;background:rgba(0,0,0,.2);padding:10px;border:1px solid rgba(255,255,255,.2)">Click a report subject to view full report details.</pre>
 </div>
 `;
 
@@ -1169,6 +1175,49 @@ function formatDateTime(value) {
   return d.toLocaleString();
 }
 
+function showReportDetailsById(reportId) {
+  const box = document.getElementById('reportDetailsBox');
+  if (!box) return;
+
+  const wantedId = String(reportId || '').trim();
+  if (!wantedId) {
+    box.textContent = 'Click a report subject to view full report details.';
+    return;
+  }
+
+  const item = lastLoadedReportItems.find((x) => String((x && x.id) || '') === wantedId);
+  if (!item) {
+    box.textContent = 'Report details unavailable. Refresh reports and try again.';
+    return;
+  }
+
+  const rawRow = (item.rawRow && typeof item.rawRow === 'object') ? item.rawRow : {};
+  const rawKeys = Object.keys(rawRow);
+  const cleanedRaw = {};
+  rawKeys.sort().forEach((key) => {
+    const value = rawRow[key];
+    if (String(value || '').trim() !== '') {
+      cleanedRaw[key] = value;
+    }
+  });
+
+  const lines = [
+    'Type: ' + String(item.type || '-'),
+    'Subject: ' + String(item.subject || '-'),
+    'Officer: ' + String(item.officerName || '-'),
+    'Date: ' + String(item.reportDate || '-'),
+    'Source Tab: ' + String(item.sourceTab || '-'),
+    'Status: ' + String(item.approvalStatus || 'pending'),
+    'Approved By: ' + String(item.approvedBy || '-'),
+    'Approved At: ' + String(formatDateTime(item.approvedAt || '')),
+    '',
+    'Raw Report Fields:',
+    JSON.stringify(Object.keys(cleanedRaw).length ? cleanedRaw : rawRow, null, 2)
+  ];
+
+  box.textContent = lines.join('\n');
+}
+
 async function loadReportItems() {
   const tableBody = document.querySelector('#reportsTable tbody');
   if (!tableBody) return;
@@ -1178,6 +1227,8 @@ async function loadReportItems() {
   const type = String((typeFilterEl && typeFilterEl.value) || 'all').trim();
   const status = String((statusFilterEl && statusFilterEl.value) || 'all').trim();
 
+  lastLoadedReportItems = [];
+  showReportDetailsById('');
   tableBody.innerHTML = '<tr><td colspan="9">Loading reports...</td></tr>';
 
   try {
@@ -1191,6 +1242,8 @@ async function loadReportItems() {
       tableBody.innerHTML = '<tr><td colspan="9">No reports found for current filters.</td></tr>';
       return;
     }
+
+    lastLoadedReportItems = items;
 
     tableBody.innerHTML = items.map((item) => {
       const sourceTabText = String(item.sourceTab || '').toLowerCase();
@@ -1208,7 +1261,7 @@ async function loadReportItems() {
 
       return '<tr>' +
         '<td>' + escapeHtml(item.type) + '</td>' +
-        '<td title="' + escapeHtml(item.detail || '') + '">' + escapeHtml(item.subject || '-') + '</td>' +
+        '<td title="' + escapeHtml(item.detail || '') + '"><button type="button" class="report-open-btn" data-report-id="' + escapeHtml(item.id) + '">' + escapeHtml(item.subject || '-') + '</button></td>' +
         '<td>' + escapeHtml(item.officerName || '-') + '</td>' +
         '<td>' + escapeHtml(item.reportDate || '-') + '</td>' +
         '<td>' + escapeHtml(item.sourceTab || '-') + '</td>' +
@@ -1218,6 +1271,18 @@ async function loadReportItems() {
         '<td>' + actionButtons + '</td>' +
         '</tr>';
     }).join('');
+
+    const detailButtons = Array.from(tableBody.querySelectorAll('.report-open-btn'));
+    detailButtons.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const reportId = String(btn.getAttribute('data-report-id') || '').trim();
+        showReportDetailsById(reportId);
+      });
+    });
+
+    if (items[0] && items[0].id) {
+      showReportDetailsById(items[0].id);
+    }
   } catch (err) {
     tableBody.innerHTML = '<tr><td colspan="9">Unable to load reports: ' + escapeHtml(err.message) + '</td></tr>';
   }
