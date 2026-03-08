@@ -129,16 +129,33 @@ async function loadRoster(){
     table.innerHTML = '';
     let count = 0;
     (data || []).forEach((item, idx) => {
+      // Normalize legacy/misaligned rows so display stays clean.
+      let id = String(item.ID || '').trim();
+      let name = String(item.Name || '').trim();
+      let callsign = String(item.Callsign || '').trim();
+      let rank = String(item.Rank || '').trim();
+      let division = String(item.Division || '').trim();
+
+      // If Name is empty but Callsign has person-like value, shift it.
+      if (!name && callsign && rank) {
+        name = callsign;
+        callsign = '';
+      }
+
+      // Skip rows that only have default dropdown values and no identity fields.
+      const hasIdentity = !!(id || name || callsign);
+      if (!hasIdentity) return;
+
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td>${item.ID || ''}</td>
-        <td>${item.Name || ''}</td>
-        <td>${item.Callsign || ''}</td>
-        <td>${item.Rank || ''}</td>
-        <td>${item.Division || ''}</td>
+        <td>${id}</td>
+        <td>${name}</td>
+        <td>${callsign}</td>
+        <td>${rank}</td>
+        <td>${division}</td>
         <td>
-          <button onclick="editOfficer('${item.ID}')">Edit</button>
-          <button onclick="deleteOfficer('${item.ID}')">Delete</button>
+          <button onclick="editOfficer('${id}')">Edit</button>
+          <button onclick="deleteOfficer('${id}')">Delete</button>
         </td>
       `;
       table.appendChild(tr);
