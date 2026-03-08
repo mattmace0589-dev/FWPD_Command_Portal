@@ -67,6 +67,13 @@ function renderLoginScreen(statusText = '') {
         <button id="showCreatePane">Create Account</button>
       </div>
 
+      <div style="border:1px solid rgba(255,255,255,.2);padding:10px;margin-bottom:12px;">
+        <b>First-time setup</b><br>
+        <span style="font-size:13px;opacity:.9">If account creation says email not found, link your Command_Users tab once.</span><br>
+        <input id="commandUsersUrl" type="text" placeholder="Paste Command_Users Google Sheet/CSV link" style="margin-top:8px;width:100%;max-width:540px"><br><br>
+        <button id="linkCommandUsersBtn">Link Command_Users Tab</button>
+      </div>
+
       <div id="loginPane" style="display:block">
         <h3>Login</h3>
         <label>Email</label><br>
@@ -99,8 +106,34 @@ function renderLoginScreen(statusText = '') {
     loginPane.style.display = 'none';
     createPane.style.display = 'block';
   });
+  document.getElementById('linkCommandUsersBtn').addEventListener('click', linkCommandUsersTab);
   document.getElementById('createAccountBtn').addEventListener('click', createAccount);
   document.getElementById('loginBtn').addEventListener('click', loginAccount);
+}
+
+async function linkCommandUsersTab() {
+  const url = String((document.getElementById('commandUsersUrl') || {}).value || '').trim();
+  const status = document.getElementById('accountStatus');
+  if (!url) {
+    if (status) status.textContent = 'Please paste a Command_Users tab link first.';
+    return;
+  }
+
+  try {
+    const response = await fetch('/api/auth/link-command-users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Failed to link Command_Users tab');
+
+    const rows = (((data || {}).import || {}).result || []).find(x => x.name === 'command_users');
+    const rowCount = rows && typeof rows.rows === 'number' ? rows.rows : 0;
+    if (status) status.textContent = 'Command_Users linked successfully (' + rowCount + ' rows). You can now create your account.';
+  } catch (err) {
+    if (status) status.textContent = 'Link failed: ' + err.message;
+  }
 }
 
 async function refreshAuthSession() {

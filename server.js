@@ -751,6 +751,33 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
+app.post('/api/auth/link-command-users', async (req, res) => {
+  try {
+    const url = String(req.body && req.body.url || '').trim();
+    if (!url) return res.status(400).json({ error: 'Command_Users URL is required.' });
+
+    const current = loadSheetsConfig();
+    const tabs = Array.isArray(current.tabs) ? current.tabs.slice() : [];
+    const existingIdx = tabs.findIndex(t => sanitizeName(t && t.name) === 'command_users');
+    if (existingIdx >= 0) {
+      tabs[existingIdx] = { name: 'command_users', url };
+    } else {
+      tabs.push({ name: 'command_users', url });
+    }
+
+    const updated = saveSheetsConfig({
+      tabs,
+      autoSyncOnLoad: current.autoSyncOnLoad,
+      lastSync: current.lastSync
+    });
+
+    const imported = await importSheetsTabs([{ name: 'command_users', url }]);
+    return res.json({ ok: imported.ok, linked: true, config: updated, import: imported });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
 app.get('/api/auth/me', (req, res) => {
   const auth = getAuthFromRequest(req);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
