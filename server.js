@@ -119,17 +119,69 @@ function saveJson(data){
   fs.writeFileSync(JSON_FILE, JSON.stringify(data,null,2));
 }
 
+function normalizeKey(key) {
+  return String(key || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function getByAliases(record, aliases) {
+  const keys = Object.keys(record || {});
+  for (const alias of aliases) {
+    const wanted = normalizeKey(alias);
+    const foundKey = keys.find(k => normalizeKey(k) === wanted);
+    if (foundKey) {
+      const value = String(record[foundKey] || '').trim();
+      if (value) return value;
+    }
+  }
+  return '';
+}
+
+function firstNonEmpty(values) {
+  for (const v of values) {
+    const s = String(v || '').trim();
+    if (s) return s;
+  }
+  return '';
+}
+
 function mapRosterRecords(records) {
   return records.map((r, idx) => {
-    const keys = Object.keys(r);
+    const values = Object.values(r || {});
+
+    const id = getByAliases(r, [
+      'id', 'officerid', 'employeeid', 'memberid', 'badgeid'
+    ]) || firstNonEmpty([values[0], values[1]]) || String(Date.now() + idx);
+
+    const name = getByAliases(r, [
+      'name', 'officername', 'fullname', 'charactername'
+    ]) || firstNonEmpty([values[1], values[2], values[3]]);
+
+    const callsign = getByAliases(r, [
+      'callsign', 'callsigns', 'call sign', 'radio', 'radioid'
+    ]) || firstNonEmpty([values[6], values[4], values[3]]);
+
+    const rank = getByAliases(r, [
+      'rank', 'officerrank', 'grade'
+    ]) || firstNonEmpty([values[8], values[5], values[4]]);
+
+    const division = getByAliases(r, [
+      'division', 'unit', 'departmentdivision'
+    ]) || firstNonEmpty([values[9], values[6], values[5]]);
+
     return {
-      ID: r.ID || r.Id || r.id || r[keys[0]] || String(Date.now() + idx),
-      Name: r.Name || r.name || r[keys[1]] || '',
-      Callsign: r.Callsign || r.callsign || r.Callsigns || r[keys[2]] || '',
-      Rank: r.Rank || r.rank || r[keys[3]] || '',
-      Division: r.Division || r.division || r[keys[4]] || ''
+      ID: id,
+      Name: name,
+      Callsign: callsign,
+      Rank: rank,
+      Division: division
     };
-  }).filter(x => String(x.ID).trim() !== '' || String(x.Name).trim() !== '');
+  }).filter(x => {
+    return String(x.ID).trim() !== '' ||
+      String(x.Name).trim() !== '' ||
+      String(x.Callsign).trim() !== '' ||
+      String(x.Rank).trim() !== '' ||
+      String(x.Division).trim() !== '';
+  });
 }
 
 // API: list roster
