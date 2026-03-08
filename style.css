@@ -45,6 +45,17 @@ body::before {
   z-index: 0;
 }
 
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: url('images/ntxrp.png') center calc(50% + 290px) / min(40vw, 430px) no-repeat;
+  opacity: 0.34;
+  filter: contrast(1.06) saturate(0.88);
+  z-index: 0;
+}
+
 .header,
 .container {
   position: relative;
@@ -325,6 +336,11 @@ pre {
       radial-gradient(circle at center, rgba(6, 18, 42, 0.28) 0%, rgba(6, 18, 42, 0.78) 72%),
       url('images/fwpd_patch.png') center center / min(105vh, 840px) no-repeat;
     opacity: 0.18;
+  }
+
+  body::after {
+    background: url('images/ntxrp.png') center calc(50% + 190px) / min(62vw, 300px) no-repeat;
+    opacity: 0.32;
   }
 
   .container {
