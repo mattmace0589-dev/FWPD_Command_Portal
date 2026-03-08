@@ -272,9 +272,88 @@ async function openOfficerProfile(criteria) {
       return;
     }
 
-    renderOfficerProfile(officer);
+    const enrichedOfficer = await enrichOfficerProfileData(officer);
+    renderOfficerProfile(enrichedOfficer);
   } catch (err) {
     alert('Failed to open profile: ' + err.message);
+  }
+}
+
+function pickOfficerField(obj, keys) {
+  for (const key of keys) {
+    const val = String((obj && obj[key]) || '').trim();
+    if (val) return val;
+  }
+  return '';
+}
+
+function computeColumnsKTFromRecord(record) {
+  const output = {};
+  const keys = Object.keys(record || {});
+
+  const fieldDefs = [
+    { label: 'Sub Division_1', keys: ['Sub Division_1', 'Sub_Division_1', 'sub_division_1'] },
+    { label: 'Sub Division_2', keys: ['Sub Division_2', 'Sub_Division_2', 'sub_division_2'] },
+    { label: 'Supervisor', keys: ['Supervisor', 'supervisor'] },
+    { label: 'Status', keys: ['Status', 'status'] },
+    { label: 'Activity_Status', keys: ['Activity_Status', 'Activity Status', 'activity_status'] },
+    { label: 'Hire_Date', keys: ['Hire_Date', 'Hire Date', 'hire_date'] },
+    { label: 'Notes_Flag', keys: ['Notes_Flag', 'Notes Flag', 'notes_flag'] },
+    { label: 'Discipline_Flag', keys: ['Discipline_Flag', 'Discipline Flag', 'discipline_flag'] },
+    { label: 'Created_Date', keys: ['Created_Date', 'Created Date', 'created_date'] },
+    { label: 'Last_Updated', keys: ['Last_Updated', 'Last Updated', 'last_updated'] }
+  ];
+
+  fieldDefs.forEach((f) => {
+    output[f.label] = pickOfficerField(record, f.keys);
+  });
+
+  // If preferred headers are empty/missing, fall back to positional K-T.
+  const hasAnyPreferred = Object.values(output).some(v => String(v || '').trim() !== '');
+  if (!hasAnyPreferred) {
+    for (let i = 10; i <= 19; i++) {
+      const key = keys[i] || ('Column ' + String.fromCharCode(65 + i));
+      output[key] = String((record && record[key]) || '').trim();
+    }
+  }
+
+  return output;
+}
+
+function matchRawRecordToOfficer(raw, officer) {
+  const rawId = pickOfficerField(raw, ['ID', 'id', 'Officer_ID', 'officer_id']);
+  const rawName = pickOfficerField(raw, ['Name', 'name', 'RP_Name', 'rp_name', 'Officer_Name', 'officer_name']);
+  const rawCallsign = pickOfficerField(raw, ['Callsign', 'callsign', 'Call_Sign', 'call_sign']);
+
+  const offId = String(officer.ID || '').trim();
+  const offName = String(officer.Name || '').trim().toLowerCase();
+  const offCallsign = String(officer.Callsign || '').trim().toLowerCase();
+
+  if (offId && rawId && String(rawId).trim() === offId) return true;
+  if (offName && rawName && String(rawName).trim().toLowerCase() === offName) return true;
+  if (offCallsign && rawCallsign && String(rawCallsign).trim().toLowerCase() === offCallsign) return true;
+  return false;
+}
+
+async function enrichOfficerProfileData(officer) {
+  const hasImported = officer && officer.ImportedFields && Object.keys(officer.ImportedFields).length > 0;
+  const hasKT = officer && officer.ColumnsKT && Object.keys(officer.ColumnsKT).length > 0;
+  if (hasImported && hasKT) return officer;
+
+  try {
+    const response = await fetch('/api/sheets/tab/roster');
+    const rows = await response.json();
+    if (!response.ok || !Array.isArray(rows)) return officer;
+
+    const rawMatch = rows.find(r => matchRawRecordToOfficer(r, officer));
+    if (!rawMatch) return officer;
+
+    const merged = Object.assign({}, officer);
+    if (!hasImported) merged.ImportedFields = rawMatch;
+    if (!hasKT) merged.ColumnsKT = computeColumnsKTFromRecord(rawMatch);
+    return merged;
+  } catch (e) {
+    return officer;
   }
 }
 
@@ -294,10 +373,10 @@ function renderOfficerProfile(officer) {
     .filter((k) => String(imported[k] || '').trim() !== '')
     .map((k) => [k, imported[k]]);
 
-  const columnsNT = (officer && officer.ColumnsNT && typeof officer.ColumnsNT === 'object')
-    ? officer.ColumnsNT
-    : {};
-  const ntRows = Object.keys(columnsNT).map((k) => [k, columnsNT[k] || '-']);
+  const columnsKT = (officer && officer.ColumnsKT && typeof officer.ColumnsKT === 'object')
+    ? officer.ColumnsKT
+    : ((officer && officer.ColumnsNT && typeof officer.ColumnsNT === 'object') ? officer.ColumnsNT : {});
+  const ktRows = Object.keys(columnsKT).map((k) => [k, columnsKT[k] || '-']);
 
   const rowsToTable = (rows) => {
     if (!rows.length) return '<p>No data available.</p>';
@@ -318,8 +397,8 @@ function renderOfficerProfile(officer) {
     <h3>Core Information</h3>
     ${rowsToTable(coreRows)}
 
-    <h3 style="margin-top:18px;">Columns N Through T</h3>
-    ${rowsToTable(ntRows)}
+    <h3 style="margin-top:18px;">Columns K Through T</h3>
+    ${rowsToTable(ktRows)}
 
     <h3 style="margin-top:18px;">All Imported Officer Data</h3>
     ${rowsToTable(importedRows)}

@@ -491,6 +491,13 @@ function mapRosterRecords(records) {
       importedFields[key] = cleanField(r[key]);
     });
 
+    const columnsKT = {};
+    for (let i = 10; i <= 19; i++) {
+      const fallbackName = 'Column ' + String.fromCharCode(65 + i);
+      const keyAtIndex = originalKeys[i] || fallbackName;
+      columnsKT[keyAtIndex] = cleanField(r[keyAtIndex]);
+    }
+
     const columnsNT = {};
     for (let i = 13; i <= 19; i++) {
       const fallbackName = 'Column ' + String.fromCharCode(65 + i);
@@ -505,6 +512,7 @@ function mapRosterRecords(records) {
       Rank: rank,
       Division: division,
       ImportedFields: importedFields,
+      ColumnsKT: columnsKT,
       ColumnsNT: columnsNT
     };
   }).filter(Boolean);
