@@ -144,63 +144,50 @@ function firstNonEmpty(values) {
   return '';
 }
 
+function cleanField(value) {
+  const v = String(value || '').trim();
+  if (!v) return '';
+  const lowered = v.toLowerCase();
+  if (['n/a', 'na', 'none', 'null', '-', '--'].includes(lowered)) return '';
+  return v;
+}
+
+function isMeaningful(value) {
+  return cleanField(value) !== '';
+}
+
 function mapRosterRecords(records) {
   return records.map((r, idx) => {
-    const values = Object.values(r || {});
+    const kv = {};
+    Object.keys(r || {}).forEach((k) => {
+      kv[normalizeKey(k)] = cleanField(r[k]);
+    });
 
-    const id = getByAliases(r, [
-      'id', 'officerid', 'employeeid', 'memberid', 'badgeid'
-    ]) || String(values[0] || '').trim();
+    const pick = (...keys) => firstNonEmpty(keys.map((k) => kv[normalizeKey(k)]));
 
-    const name = getByAliases(r, [
-      'name', 'officername', 'fullname', 'charactername'
-    ]) || String(values[1] || '').trim() || String(values[0] || '').trim();
+    const id = pick('officer_id', 'officerid', 'badge_number', 'badgenumber', 'badgeid', 'employeeid', 'memberid', 'id');
+    let name = pick('rp_name', 'officer_name', 'officername', 'character_name', 'charactername', 'fullname', 'name');
+    let callsign = pick('callsign', 'call_sign', 'callsigns', 'radioid', 'radio');
+    const rank = pick('rank', 'officer_rank', 'officerrank', 'grade');
+    const division = pick('division', 'department_division', 'departmentdivision', 'unit');
 
-    const callsign = getByAliases(r, [
-      'callsign', 'callsigns', 'call sign', 'radio', 'radioid'
-    ]) || String(values[6] || '').trim();
+    // Recover from imports where a text name landed in Callsign.
+    if (!name && callsign && /[a-z]/i.test(callsign) && !/\d/.test(callsign)) {
+      name = callsign;
+      callsign = '';
+    }
 
-    const rank = getByAliases(r, [
-      'rank', 'officerrank', 'grade'
-    ]) || String(values[8] || '').trim();
+    const hasIdentity = [id, name, callsign].some(isMeaningful);
+    if (!hasIdentity) return null;
 
-    const division = getByAliases(r, [
-      'division', 'unit', 'departmentdivision'
-    ]) || String(values[9] || '').trim();
-
-    let mapped = {
-      ID: id,
+    return {
+      ID: id || ('IMP-' + Date.now() + '-' + idx),
       Name: name,
       Callsign: callsign,
       Rank: rank,
       Division: division
     };
-
-    // Heuristic fix: some sheets place Name where Callsign would be.
-    // If Name is blank but Callsign has text and Rank/Division look valid,
-    // treat Callsign as Name and leave Callsign empty.
-    if (!mapped.Name && mapped.Callsign && mapped.Rank) {
-      mapped.Name = mapped.Callsign;
-      mapped.Callsign = '';
-    }
-
-    // Only generate an ID when a person identity exists.
-    // This avoids importing blank rows that only have default rank/division values.
-    const hasIdentity = [mapped.ID, mapped.Name, mapped.Callsign]
-      .some(v => String(v || '').trim() !== '');
-    if (!mapped.ID && hasIdentity) {
-      mapped.ID = 'AUTO-' + (Date.now() + idx);
-    }
-
-    return hasIdentity ? mapped : null;
-  }).filter(x => {
-    if (!x) return false;
-    return String(x.ID).trim() !== '' ||
-      String(x.Name).trim() !== '' ||
-      String(x.Callsign).trim() !== '' ||
-      String(x.Rank).trim() !== '' ||
-      String(x.Division).trim() !== '';
-  });
+  }).filter(Boolean);
 }
 
 // API: list roster

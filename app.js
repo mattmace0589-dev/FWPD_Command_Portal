@@ -128,21 +128,26 @@ async function loadRoster(){
     const table = document.querySelector('#rosterTable tbody');
     table.innerHTML = '';
     let count = 0;
-    (data || []).forEach((item, idx) => {
-      // Normalize legacy/misaligned rows so display stays clean.
-      let id = String(item.ID || '').trim();
-      let name = String(item.Name || '').trim();
-      let callsign = String(item.Callsign || '').trim();
-      let rank = String(item.Rank || '').trim();
-      let division = String(item.Division || '').trim();
+    const pick = (obj, keys) => {
+      for (const key of keys) {
+        const val = String((obj && obj[key]) || '').trim();
+        if (val) return val;
+      }
+      return '';
+    };
 
-      // If Name is empty but Callsign has person-like value, shift it.
-      if (!name && callsign && rank) {
+    (data || []).forEach((item) => {
+      const id = pick(item, ['ID', 'id', 'Officer_ID', 'officer_id']);
+      let name = pick(item, ['Name', 'name', 'RP_Name', 'rp_name', 'Officer_Name', 'officer_name']);
+      let callsign = pick(item, ['Callsign', 'callsign', 'Call_Sign', 'call_sign']);
+      const rank = pick(item, ['Rank', 'rank']);
+      const division = pick(item, ['Division', 'division', 'Unit', 'unit']);
+
+      if (!name && callsign && /[a-z]/i.test(callsign) && !/\d/.test(callsign)) {
         name = callsign;
         callsign = '';
       }
 
-      // Skip rows that only have default dropdown values and no identity fields.
       const hasIdentity = !!(id || name || callsign);
       if (!hasIdentity) return;
 
@@ -153,9 +158,11 @@ async function loadRoster(){
         <td>${callsign}</td>
         <td>${rank}</td>
         <td>${division}</td>
-        <td>
-          <button onclick="editOfficer('${id}')">Edit</button>
-          <button onclick="deleteOfficer('${id}')">Delete</button>
+        <td class="actions-cell">
+          <div class="row-actions">
+            <button onclick="editOfficer('${id}')">Edit</button>
+            <button onclick="deleteOfficer('${id}')">Delete</button>
+          </div>
         </td>
       `;
       table.appendChild(tr);

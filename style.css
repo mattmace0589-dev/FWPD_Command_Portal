@@ -58,6 +58,10 @@ width:100%;
 border-collapse:collapse;
 }
 
+#rosterTable{
+table-layout:fixed;
+}
+
 th{
 color:gold;
 border-bottom:2px solid gold;
@@ -67,4 +71,31 @@ padding:10px;
 td{
 padding:10px;
 border-bottom:1px solid rgba(255,255,255,.2);
+vertical-align:middle;
+}
+
+#rosterTable td{
+overflow:hidden;
+text-overflow:ellipsis;
+}
+
+#rosterTable th:last-child,
+#rosterTable td:last-child{
+width:170px;
+text-align:center;
+white-space:nowrap;
+}
+
+#rosterTable td.actions-cell{
+overflow:visible;
+}
+
+.row-actions{
+display:flex;
+justify-content:center;
+gap:8px;
+}
+
+.row-actions button{
+min-width:64px;
 }
