@@ -3,6 +3,7 @@
 const AUTO_SYNC_SESSION_KEY = 'fwpd_auto_sync_done';
 const LOCAL_SYNC_TABS_KEY = 'fwpd_sync_tabs_v1';
 const AUTH_TOKEN_KEY = 'fwpd_auth_token';
+const AUTH_PROMPT_SESSION_KEY = 'fwpd_auth_prompt_shown';
 
 let currentUser = null;
 
@@ -50,6 +51,48 @@ function showAuthBanner() {
   title.appendChild(banner);
 }
 
+function closeAuthPrompt() {
+  const modal = document.getElementById('authPromptModal');
+  if (modal) modal.remove();
+}
+
+function showAuthPrompt() {
+  if (isLoggedIn()) return;
+  if (sessionStorage.getItem(AUTH_PROMPT_SESSION_KEY) === '1') return;
+  sessionStorage.setItem(AUTH_PROMPT_SESSION_KEY, '1');
+
+  closeAuthPrompt();
+
+  const html = `
+    <div id="authPromptModal" style="position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;display:flex;align-items:center;justify-content:center;">
+      <div style="background:#ffffff;color:#111;padding:18px;border:1px solid #888;max-width:460px;width:90%;box-shadow:0 8px 20px rgba(0,0,0,.35)">
+        <h3 style="margin-top:0">Command Access</h3>
+        <p style="line-height:1.4">Create account or login using an email listed in <b>Command_Users</b>.</p>
+        <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;">
+          <button id="authOpenAccount">Open Login / Create Account</button>
+          <button id="authContinueViewer">Continue as Viewer</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.insertAdjacentHTML('beforeend', html);
+  const openBtn = document.getElementById('authOpenAccount');
+  const viewerBtn = document.getElementById('authContinueViewer');
+
+  if (openBtn) {
+    openBtn.addEventListener('click', () => {
+      closeAuthPrompt();
+      loadPage('account');
+    });
+  }
+  if (viewerBtn) {
+    viewerBtn.addEventListener('click', () => {
+      closeAuthPrompt();
+    });
+  }
+}
+
 async function refreshAuthSession() {
   const token = getAuthToken();
   if (!token) {
@@ -71,6 +114,10 @@ async function refreshAuthSession() {
     currentUser = null;
   }
   showAuthBanner();
+
+  if (!currentUser) {
+    showAuthPrompt();
+  }
 }
 
 function getLocalSyncTabs() {
@@ -637,6 +684,7 @@ async function logoutAccount() {
   setAuthToken('');
   currentUser = null;
   showAuthBanner();
+  sessionStorage.removeItem(AUTH_PROMPT_SESSION_KEY);
   const status = document.getElementById('accountStatus');
   if (status) status.textContent = 'Logged out.';
 }
