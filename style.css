@@ -99,3 +99,17 @@ gap:8px;
 .row-actions button{
 min-width:64px;
 }
+
+.profile-link{
+background:none;
+border:none;
+color:#9dd8ff;
+text-decoration:underline;
+cursor:pointer;
+font:inherit;
+padding:0;
+}
+
+.profile-link:hover{
+color:#ffffff;
+}

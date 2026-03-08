@@ -449,12 +449,27 @@ function mapRosterRecords(records) {
     const hasIdentity = [id, name, callsign].some(isMeaningful);
     if (!hasIdentity) return null;
 
+    const importedFields = {};
+    const originalKeys = Object.keys(r || {});
+    originalKeys.forEach((key) => {
+      importedFields[key] = cleanField(r[key]);
+    });
+
+    const columnsNT = {};
+    for (let i = 13; i <= 19; i++) {
+      const fallbackName = 'Column ' + String.fromCharCode(65 + i);
+      const keyAtIndex = originalKeys[i] || fallbackName;
+      columnsNT[keyAtIndex] = cleanField(r[keyAtIndex]);
+    }
+
     return {
       ID: id || ('IMP-' + Date.now() + '-' + idx),
       Name: name,
       Callsign: callsign,
       Rank: rank,
-      Division: division
+      Division: division,
+      ImportedFields: importedFields,
+      ColumnsNT: columnsNT
     };
   }).filter(Boolean);
 }

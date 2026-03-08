@@ -182,10 +182,13 @@ async function loadRoster(){
       const hasIdentity = !!(id || name || callsign);
       if (!hasIdentity) return;
 
+      const safeId = String(id).replace(/'/g, "\\'");
+      const displayName = name || '(No Name)';
+
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td>${id}</td>
-        <td>${name}</td>
+        <td><button class="profile-link" onclick="openOfficerProfile('${safeId}')">${displayName}</button></td>
         <td>${callsign}</td>
         <td>${rank}</td>
         <td>${division}</td>
@@ -204,6 +207,72 @@ async function loadRoster(){
     console.error('Error loading roster:', err);
     statusEl.textContent = 'Error: ' + err.message;
   }
+}
+
+async function openOfficerProfile(id) {
+  try {
+    const response = await fetch('/api/roster');
+    const data = await response.json();
+    if (!response.ok) throw new Error('Failed to load roster data');
+
+    const officer = (data || []).find(x => String(x.ID || '') === String(id || ''));
+    if (!officer) {
+      alert('Officer profile not found. Try refreshing the roster.');
+      return;
+    }
+
+    renderOfficerProfile(officer);
+  } catch (err) {
+    alert('Failed to open profile: ' + err.message);
+  }
+}
+
+function renderOfficerProfile(officer) {
+  const coreRows = [
+    ['ID', officer.ID || ''],
+    ['Name', officer.Name || ''],
+    ['Callsign', officer.Callsign || ''],
+    ['Rank', officer.Rank || ''],
+    ['Division', officer.Division || '']
+  ];
+
+  const imported = (officer && officer.ImportedFields && typeof officer.ImportedFields === 'object')
+    ? officer.ImportedFields
+    : {};
+  const importedRows = Object.keys(imported)
+    .filter((k) => String(imported[k] || '').trim() !== '')
+    .map((k) => [k, imported[k]]);
+
+  const columnsNT = (officer && officer.ColumnsNT && typeof officer.ColumnsNT === 'object')
+    ? officer.ColumnsNT
+    : {};
+  const ntRows = Object.keys(columnsNT).map((k) => [k, columnsNT[k] || '-']);
+
+  const rowsToTable = (rows) => {
+    if (!rows.length) return '<p>No data available.</p>';
+    let html = '<table><thead><tr><th>Field</th><th>Value</th></tr></thead><tbody>';
+    rows.forEach((r) => {
+      html += '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td></tr>';
+    });
+    html += '</tbody></table>';
+    return html;
+  };
+
+  document.getElementById('content').innerHTML = `
+    <h2>Officer Profile</h2>
+    <div style="margin:8px 0 16px 0;">
+      <button onclick="loadPage('roster')">Back to Roster</button>
+    </div>
+
+    <h3>Core Information</h3>
+    ${rowsToTable(coreRows)}
+
+    <h3 style="margin-top:18px;">Columns N Through T</h3>
+    ${rowsToTable(ntRows)}
+
+    <h3 style="margin-top:18px;">All Imported Officer Data</h3>
+    ${rowsToTable(importedRows)}
+  `;
 }
 
 function showOfficerForm(id = null, data = {}) {
