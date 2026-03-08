@@ -6,7 +6,7 @@ const AUTH_TOKEN_KEY = 'fwpd_auth_token';
 const DISCIPLINE_SOURCE_URL_KEY = 'fwpd_discipline_source_url';
 const EVALUATION_SOURCE_URL_KEY = 'fwpd_evaluation_source_url';
 const DEFAULT_EVALUATION_SOURCE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR6_40O35zd-9GMo_nTg5KS76Svzt1P8ZKrfBQwPAtLloGFtpE1r4JBP3t-F-meLlDKCpvWzZkhMlOb/pub?output=csv&gid=1513386776';
-const APP_BUILD = '20260308z5';
+const APP_BUILD = '20260308z6';
 const MESSAGE_POLL_MS = 45000;
 
 let currentUser = null;
@@ -50,7 +50,17 @@ function authHeaders(extra = {}) {
 
 async function authFetch(url, options = {}) {
   const headers = authHeaders(options.headers || {});
-  return fetch(url, Object.assign({}, options, { headers }));
+  const response = await fetch(url, Object.assign({}, options, { headers }));
+  if (response.status === 401) {
+    setAuthToken('');
+    stopMessagePolling();
+    unreadMessageCount = 0;
+    currentUser = null;
+    showAuthBanner();
+    applyRuntimeLayoutFixes();
+    renderLoginScreen('Session expired or unauthorized. Please log in again.');
+  }
+  return response;
 }
 
 function isLoggedIn() {
@@ -1333,6 +1343,7 @@ async function linkDisciplinarySource() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ tabName, url })
     });
+    if (response.status === 401) throw new Error('Session expired. Please log in again, then retry linking.');
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Failed to link disciplinary source');
 
@@ -1368,6 +1379,7 @@ async function linkEvaluationSource() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ tabName, url })
     });
+    if (response.status === 401) throw new Error('Session expired. Please log in again, then retry linking.');
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Failed to link cadet evaluations source');
 
