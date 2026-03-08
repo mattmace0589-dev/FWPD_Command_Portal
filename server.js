@@ -324,14 +324,31 @@ function findCommandUserByEmail(email) {
 
   const records = getCommandUsersRecords();
   const row = records.find((r) => {
-    const rowEmail = normalizeEmail(pickField(r, ['email', 'email_address', 'mail', 'discord_email']));
+    const rowEmail = normalizeEmail(pickField(r, [
+      'email',
+      'email_address',
+      'mail',
+      'discord_email',
+      'google_email',
+      'google email',
+      'googleemail'
+    ]));
     return rowEmail && rowEmail === normalized;
   });
   if (!row) return null;
 
   return {
     email: normalized,
-    characterName: pickField(row, ['character_name', 'rp_name', 'name', 'officer_name']) || 'Officer',
+    characterName: pickField(row, [
+      'character_name',
+      'name_of_character',
+      'name of character',
+      'name_of_charac',
+      'name of charac',
+      'rp_name',
+      'name',
+      'officer_name'
+    ]) || 'Officer',
     rank: pickField(row, ['rank', 'officer_rank']) || 'Unknown',
     role: pickField(row, ['role', 'access_role', 'permissions']) || 'command'
   };
@@ -645,7 +662,7 @@ app.post('/api/auth/create-account', (req, res) => {
 
     const commandProfile = findCommandUserByEmail(email);
     if (!commandProfile) {
-      return res.status(403).json({ error: 'Email not found in Command_Users tab.' });
+      return res.status(403).json({ error: 'Email not found in Command_Users tab. Verify headers (Google Email, Name of Character/Name of Charac, Rank) and re-sync sheets.' });
     }
 
     const users = loadJsonFile(USERS_FILE, []);
