@@ -199,7 +199,7 @@ tr:hover td {
 
 #rosterTable th:last-child,
 #rosterTable td:last-child {
-  width: 170px;
+  width: 240px;
   text-align: center;
   white-space: nowrap;
 }
@@ -265,7 +265,7 @@ pre {
 .row-actions {
   display: flex;
   justify-content: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .row-actions button {
