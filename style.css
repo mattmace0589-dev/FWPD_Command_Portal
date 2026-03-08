@@ -2,7 +2,7 @@
 
 :root {
   --bg-main: #050e1c;
-  --bg-deep: #0a1d37;
+  --bg-deep: #081f33;
   --bg-slate: #112f55;
   --panel: rgba(8, 27, 43, 0.86);
   --panel-soft: rgba(12, 37, 58, 0.72);
@@ -39,8 +39,8 @@ body::before {
   pointer-events: none;
   background:
     radial-gradient(circle at center, rgba(5, 14, 28, 0.2) 0%, rgba(5, 14, 28, 0.74) 70%),
-    url('images/fwpd_patch.png') center center / min(62vh, 620px) no-repeat;
-  opacity: 0.22;
+    url('images/fwpd_patch.png') center center / min(82vh, 860px) no-repeat;
+  opacity: 0.26;
   filter: saturate(1.06) contrast(1.08);
   z-index: 0;
 }
@@ -323,7 +323,7 @@ pre {
   body::before {
     background:
       radial-gradient(circle at center, rgba(5, 14, 28, 0.3) 0%, rgba(5, 14, 28, 0.78) 72%),
-      url('images/fwpd_patch.png') center center / min(55vh, 420px) no-repeat;
+      url('images/fwpd_patch.png') center center / min(70vh, 560px) no-repeat;
     opacity: 0.18;
   }
 
