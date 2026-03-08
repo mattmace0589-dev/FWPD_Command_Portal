@@ -56,12 +56,48 @@ function parseCSV(text) {
   return rows.filter(r => r.some(c => String(c || '').trim() !== ''));
 }
 
+function scoreHeaderRow(row) {
+  const cells = (row || []).map(c => normalizeKey(c));
+  let score = 0;
+  const known = [
+    'id', 'officerid', 'officer_id', 'badgeid', 'badgenumber', 'badge_number',
+    'name', 'rpname', 'rp_name', 'officername', 'officer_name',
+    'callsign', 'call_sign', 'rank', 'division', 'unit'
+  ].map(normalizeKey);
+
+  cells.forEach((cell) => {
+    if (known.includes(cell)) score += 2;
+    if (/id|name|callsign|rank|division|unit/.test(cell)) score += 1;
+  });
+  return score;
+}
+
+function detectHeaderRowIndex(rows) {
+  const maxScan = Math.min(rows.length, 12);
+  let bestIdx = 0;
+  let bestScore = -1;
+
+  for (let i = 0; i < maxScan; i++) {
+    const s = scoreHeaderRow(rows[i]);
+    if (s > bestScore) {
+      bestScore = s;
+      bestIdx = i;
+    }
+  }
+
+  // If no meaningful header signal is found, keep first row behavior.
+  return bestScore <= 0 ? 0 : bestIdx;
+}
+
 function toObjectsFromCSV(csvText) {
   const rows = parseCSV(csvText);
   if (!rows.length) return [];
 
-  const header = rows[0].map(h => String(h || '').trim() || 'col');
-  return rows.slice(1).map(r => {
+  const headerRowIndex = detectHeaderRowIndex(rows);
+  const header = rows[headerRowIndex].map((h, idx) => String(h || '').trim() || ('col' + idx));
+  const dataRows = rows.slice(headerRowIndex + 1);
+
+  return dataRows.map(r => {
     const obj = {};
     header.forEach((h, idx) => {
       obj[h] = String(r[idx] || '').trim();
@@ -297,15 +333,23 @@ app.post('/api/sheets/import', async (req, res) => {
 
         const csvText = await response.text();
         const records = toObjectsFromCSV(csvText);
+        const sampleHeaders = records[0] ? Object.keys(records[0]) : [];
 
         if (name === 'roster') {
           const roster = mapRosterRecords(records);
           saveJson(roster);
           saveTabJson(name, records);
-          result.push({ name, ok: true, rows: roster.length, note: 'Roster replaced from sheet' });
+          result.push({
+            name,
+            ok: true,
+            rows: roster.length,
+            parsedRows: records.length,
+            headers: sampleHeaders,
+            note: 'Roster replaced from sheet'
+          });
         } else {
           saveTabJson(name, records);
-          result.push({ name, ok: true, rows: records.length });
+          result.push({ name, ok: true, rows: records.length, headers: sampleHeaders });
         }
       } catch (err) {
         result.push({ name, ok: false, error: err.message || String(err) });

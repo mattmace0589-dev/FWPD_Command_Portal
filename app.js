@@ -286,6 +286,12 @@ async function syncGoogleSheets() {
     }).join(', ');
 
     let message = 'Import completed. ' + tabSummary;
+    if (rosterResult && rosterResult.ok) {
+      const parsed = Number(rosterResult.parsedRows || 0);
+      const headers = Array.isArray(rosterResult.headers) ? rosterResult.headers.join(', ') : '';
+      message += `\nRoster parser: ${parsed} source rows.`;
+      if (headers) message += `\nDetected headers: ${headers}`;
+    }
     if (rosterResult && rosterResult.ok && Number(rosterResult.rows || 0) === 0) {
       message += '\n\nRoster imported 0 rows. Confirm the roster tab has officer data and a Name/RP_Name or Callsign column.';
     }
