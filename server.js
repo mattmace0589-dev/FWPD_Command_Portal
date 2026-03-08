@@ -15,6 +15,7 @@ app.use(express.static(path.join(__dirname)));
 const DATA_DIR = path.join(__dirname, 'data');
 const JSON_FILE = path.join(DATA_DIR, 'roster.json');
 const CSV_FILE = path.join(__dirname, 'roster.csv');
+const SHEETS_CONFIG_FILE = path.join(DATA_DIR, 'sheets-config.json');
 
 function parseCSV(text) {
   const rows = [];
@@ -293,6 +294,100 @@ function saveJson(data){
   fs.writeFileSync(JSON_FILE, JSON.stringify(data,null,2));
 }
 
+function loadSheetsConfig() {
+  ensureDataDir();
+  if (!fs.existsSync(SHEETS_CONFIG_FILE)) {
+    return { tabs: [], autoSyncOnLoad: false, lastSync: null };
+  }
+  try {
+    const parsed = JSON.parse(fs.readFileSync(SHEETS_CONFIG_FILE, 'utf8') || '{}');
+    return {
+      tabs: Array.isArray(parsed.tabs) ? parsed.tabs : [],
+      autoSyncOnLoad: !!parsed.autoSyncOnLoad,
+      lastSync: parsed.lastSync || null
+    };
+  } catch (e) {
+    return { tabs: [], autoSyncOnLoad: false, lastSync: null };
+  }
+}
+
+function saveSheetsConfig(config) {
+  ensureDataDir();
+  const safeTabs = Array.isArray(config && config.tabs)
+    ? config.tabs
+      .map(t => ({ name: sanitizeName(t && t.name), url: String(t && t.url || '').trim() }))
+      .filter(t => t.name && t.url)
+    : [];
+
+  const payload = {
+    tabs: safeTabs,
+    autoSyncOnLoad: !!(config && config.autoSyncOnLoad),
+    lastSync: (config && config.lastSync) || null
+  };
+
+  fs.writeFileSync(SHEETS_CONFIG_FILE, JSON.stringify(payload, null, 2));
+  return payload;
+}
+
+async function importSheetsTabs(tabs) {
+  const result = [];
+
+  for (const tab of tabs) {
+    const name = sanitizeName(tab && tab.name);
+    const url = String(tab && tab.url || '').trim();
+    if (!name || !url) {
+      result.push({ name: name || 'unknown', ok: false, error: 'Missing name or url' });
+      continue;
+    }
+
+    try {
+      const fetchResult = await fetchCsvWithFallback(url);
+      if (!fetchResult.ok) {
+        result.push({
+          name,
+          ok: false,
+          error: fetchResult.error,
+          status: fetchResult.status,
+          statusText: fetchResult.statusText
+        });
+        continue;
+      }
+
+      const csvText = fetchResult.csvText;
+      const records = toObjectsFromCSV(csvText);
+      const sampleHeaders = records[0] ? Object.keys(records[0]) : [];
+
+      if (name === 'roster') {
+        const roster = mapRosterRecords(records);
+        saveJson(roster);
+        saveTabJson(name, records);
+        result.push({
+          name,
+          ok: true,
+          rows: roster.length,
+          parsedRows: records.length,
+          headers: sampleHeaders,
+          sourceUrl: fetchResult.urlUsed,
+          note: 'Roster replaced from sheet'
+        });
+      } else {
+        saveTabJson(name, records);
+        result.push({ name, ok: true, rows: records.length, headers: sampleHeaders, sourceUrl: fetchResult.urlUsed });
+      }
+    } catch (err) {
+      result.push({ name, ok: false, error: err.message || String(err) });
+    }
+  }
+
+  const okCount = result.filter(x => x.ok).length;
+  const failedCount = result.length - okCount;
+  return {
+    ok: failedCount === 0,
+    result,
+    summary: { total: result.length, ok: okCount, failed: failedCount }
+  };
+}
+
 function normalizeKey(key) {
   return String(key || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 }
@@ -417,56 +512,62 @@ app.post('/api/sheets/import', async (req, res) => {
       return res.status(400).json({ error: 'No tabs provided. Send body: { tabs: [{name,url}] }' });
     }
 
-    const result = [];
+    const imported = await importSheetsTabs(tabs);
+    const config = loadSheetsConfig();
+    config.lastSync = {
+      at: new Date().toISOString(),
+      ok: imported.ok,
+      summary: imported.summary,
+      result: imported.result
+    };
+    saveSheetsConfig(config);
 
-    for (const tab of tabs) {
-      const name = sanitizeName(tab && tab.name);
-      const url = String(tab && tab.url || '').trim();
-      if (!name || !url) {
-        result.push({ name: name || 'unknown', ok: false, error: 'Missing name or url' });
-        continue;
-      }
+    return res.json(imported);
+  } catch (err) {
+    return res.status(500).json({ error: err.message || String(err) });
+  }
+});
 
-      try {
-        const fetchResult = await fetchCsvWithFallback(url);
-        if (!fetchResult.ok) {
-          result.push({
-            name,
-            ok: false,
-            error: fetchResult.error,
-            status: fetchResult.status,
-            statusText: fetchResult.statusText
-          });
-          continue;
-        }
+app.get('/api/sheets/config', (req, res) => {
+  const config = loadSheetsConfig();
+  res.json(config);
+});
 
-        const csvText = fetchResult.csvText;
-        const records = toObjectsFromCSV(csvText);
-        const sampleHeaders = records[0] ? Object.keys(records[0]) : [];
+app.put('/api/sheets/config', (req, res) => {
+  try {
+    const current = loadSheetsConfig();
+    const incoming = req.body || {};
+    const updated = saveSheetsConfig({
+      tabs: Array.isArray(incoming.tabs) ? incoming.tabs : current.tabs,
+      autoSyncOnLoad: typeof incoming.autoSyncOnLoad === 'boolean' ? incoming.autoSyncOnLoad : current.autoSyncOnLoad,
+      lastSync: current.lastSync
+    });
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message || String(err) });
+  }
+});
 
-        if (name === 'roster') {
-          const roster = mapRosterRecords(records);
-          saveJson(roster);
-          saveTabJson(name, records);
-          result.push({
-            name,
-            ok: true,
-            rows: roster.length,
-            parsedRows: records.length,
-            headers: sampleHeaders,
-            sourceUrl: fetchResult.urlUsed,
-            note: 'Roster replaced from sheet'
-          });
-        } else {
-          saveTabJson(name, records);
-          result.push({ name, ok: true, rows: records.length, headers: sampleHeaders, sourceUrl: fetchResult.urlUsed });
-        }
-      } catch (err) {
-        result.push({ name, ok: false, error: err.message || String(err) });
-      }
+app.post('/api/sheets/sync', async (req, res) => {
+  try {
+    const config = loadSheetsConfig();
+    const tabs = Array.isArray(req.body && req.body.tabs) && req.body.tabs.length
+      ? req.body.tabs
+      : config.tabs;
+
+    if (!tabs.length) {
+      return res.status(400).json({ error: 'No saved tabs to sync. Save a roster link first.' });
     }
 
-    return res.json({ ok: true, result });
+    const imported = await importSheetsTabs(tabs);
+    config.lastSync = {
+      at: new Date().toISOString(),
+      ok: imported.ok,
+      summary: imported.summary,
+      result: imported.result
+    };
+    saveSheetsConfig(config);
+    return res.json(imported);
   } catch (err) {
     return res.status(500).json({ error: err.message || String(err) });
   }
@@ -476,6 +577,7 @@ app.get('/api/sheets/tabs', (req, res) => {
   ensureDataDir();
   const files = fs.readdirSync(DATA_DIR)
     .filter(f => f.endsWith('.json'))
+    .filter(f => f !== 'sheets-config.json')
     .map(f => f.replace(/\.json$/, ''));
   res.json(files);
 });

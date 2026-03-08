@@ -1,5 +1,7 @@
 // Simple local API calls to /api/roster endpoints
 
+const AUTO_SYNC_SESSION_KEY = 'fwpd_auto_sync_done';
+
 function loadPage(page){
 
 /* DASHBOARD */
@@ -23,7 +25,15 @@ document.getElementById("content").innerHTML = `
 </ul>
 
 </div>
+
+<div style="margin-top:24px">
+<b>Google Sync Status</b>
+<pre id="syncStatusBox" style="margin-top:8px;white-space:pre-wrap;background:rgba(0,0,0,.2);padding:10px;border:1px solid rgba(255,255,255,.2)">Loading sync status...</pre>
+</div>
 `;
+
+loadSyncStatus();
+autoSyncOnLoad();
 
 }
 
@@ -299,6 +309,12 @@ async function syncGoogleSheets() {
   }
 
   try {
+    await fetch('/api/sheets/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tabs, autoSyncOnLoad: true })
+    });
+
     const response = await fetch('/api/sheets/import', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -328,8 +344,69 @@ async function syncGoogleSheets() {
 
     alert(message);
     loadRoster();
+    loadSyncStatus();
   } catch (err) {
     alert('Google sync failed: ' + err.message + '\n\nUse a published CSV link or standard sheet link with correct tab gid.');
+  }
+}
+
+function formatSyncSummary(result) {
+  const okRows = (result || []).filter(x => x.ok).map(x => {
+    const rows = typeof x.rows === 'number' ? ` (${x.rows} rows)` : '';
+    return `${x.name}: OK${rows}`;
+  });
+  const failRows = (result || []).filter(x => !x.ok).map(x => `${x.name}: FAILED (${x.error || 'error'})`);
+  return okRows.concat(failRows).join('\n');
+}
+
+async function loadSyncStatus() {
+  const box = document.getElementById('syncStatusBox');
+  if (!box) return;
+
+  try {
+    const response = await fetch('/api/sheets/config');
+    const config = await response.json();
+    if (!response.ok) throw new Error(config.error || 'Failed to load sync status');
+
+    const lines = [];
+    lines.push('Auto-sync on load: ' + (config.autoSyncOnLoad ? 'Enabled' : 'Disabled'));
+    lines.push('Saved tabs: ' + ((config.tabs || []).map(t => t.name).join(', ') || 'none'));
+    if (config.lastSync && config.lastSync.at) {
+      lines.push('Last sync: ' + new Date(config.lastSync.at).toLocaleString());
+      if (config.lastSync.summary) {
+        lines.push('Summary: ' + config.lastSync.summary.ok + ' OK / ' + config.lastSync.summary.failed + ' failed');
+      }
+      if (Array.isArray(config.lastSync.result) && config.lastSync.result.length) {
+        lines.push('');
+        lines.push(formatSyncSummary(config.lastSync.result));
+      }
+    } else {
+      lines.push('Last sync: none yet');
+    }
+
+    box.textContent = lines.join('\n');
+  } catch (err) {
+    box.textContent = 'Sync status unavailable: ' + err.message;
+  }
+}
+
+async function autoSyncOnLoad() {
+  if (sessionStorage.getItem(AUTO_SYNC_SESSION_KEY) === '1') return;
+
+  try {
+    const configResponse = await fetch('/api/sheets/config');
+    const config = await configResponse.json();
+    if (!configResponse.ok) return;
+    if (!config.autoSyncOnLoad || !Array.isArray(config.tabs) || !config.tabs.length) return;
+
+    sessionStorage.setItem(AUTO_SYNC_SESSION_KEY, '1');
+    const syncResponse = await fetch('/api/sheets/sync', { method: 'POST' });
+    const syncResult = await syncResponse.json();
+    if (!syncResponse.ok) throw new Error(syncResult.error || 'Auto-sync failed');
+    await loadSyncStatus();
+  } catch (err) {
+    const box = document.getElementById('syncStatusBox');
+    if (box) box.textContent = 'Auto-sync failed: ' + err.message;
   }
 }
 
@@ -390,3 +467,5 @@ async function loadSheetTabData(name) {
     dataEl.textContent = 'Failed to load tab: ' + err.message;
   }
 }
+
+loadPage('dashboard');
