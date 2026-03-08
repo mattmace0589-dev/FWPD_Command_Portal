@@ -5,8 +5,9 @@ const LOCAL_SYNC_TABS_KEY = 'fwpd_sync_tabs_v1';
 const AUTH_TOKEN_KEY = 'fwpd_auth_token';
 const DISCIPLINE_SOURCE_URL_KEY = 'fwpd_discipline_source_url';
 const EVALUATION_SOURCE_URL_KEY = 'fwpd_evaluation_source_url';
+const DEFAULT_ROSTER_SOURCE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR6_40O35zd-9GMo_nTg5KS76Svzt1P8ZKrfBQwPAtLloGFtpE1r4JBP3t-F-meLlDKCpvWzZkhMlOb/pub?output=csv&gid=757275616';
 const DEFAULT_EVALUATION_SOURCE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR6_40O35zd-9GMo_nTg5KS76Svzt1P8ZKrfBQwPAtLloGFtpE1r4JBP3t-F-meLlDKCpvWzZkhMlOb/pub?output=csv&gid=1513386776';
-const APP_BUILD = '20260308z9';
+const APP_BUILD = '20260308z11';
 const MESSAGE_POLL_MS = 45000;
 
 let currentUser = null;
@@ -733,7 +734,6 @@ async function loadRoster(){
       const tr = document.createElement('tr');
       const actionButtons = isLoggedIn()
         ? `<button data-id="${safeIdAttr}" data-name="${safeNameAttr}" data-callsign="${safeCallsignAttr}" onclick="openOfficerProfileFromRow(this)">Profile</button>
-            <button onclick="openOfficerNotes('${id}')">Notes</button>
             <button onclick="editOfficer('${id}')">Edit</button>
             <button onclick="deleteOfficer('${id}')">Delete</button>`
         : `<button data-id="${safeIdAttr}" data-name="${safeNameAttr}" data-callsign="${safeCallsignAttr}" onclick="openOfficerProfileFromRow(this)">Profile</button>`;
@@ -1694,7 +1694,8 @@ async function syncGoogleSheets() {
     }
   };
 
-  const rosterURL = prompt('Paste Roster Google Sheets link (tab link or published CSV):');
+  const rosterURL = String(DEFAULT_ROSTER_SOURCE_URL || '').trim() ||
+    prompt('Paste Roster Google Sheets link (tab link or published CSV):', String(DEFAULT_ROSTER_SOURCE_URL || '').trim());
   if (!rosterURL) return;
 
   if (!isValidGoogleSheetLink(rosterURL)) {
@@ -1826,6 +1827,20 @@ async function autoSyncOnLoad() {
     let autoEnabled = !!config.autoSyncOnLoad;
 
     // Render free deployments can reset local files; restore from browser cache when available.
+    if (!tabsToSync.length) {
+      const defaultRosterUrl = String(DEFAULT_ROSTER_SOURCE_URL || '').trim();
+      if (defaultRosterUrl) {
+        tabsToSync = [{ name: 'roster', url: defaultRosterUrl }];
+        autoEnabled = true;
+        setLocalSyncTabs(tabsToSync);
+        await fetch('/api/sheets/config', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tabs: tabsToSync, autoSyncOnLoad: true })
+        });
+      }
+    }
+
     if (!tabsToSync.length) {
       const cachedTabs = getLocalSyncTabs();
       if (cachedTabs.length) {
