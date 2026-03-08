@@ -150,7 +150,7 @@ function mapRosterRecords(records) {
 
     const id = getByAliases(r, [
       'id', 'officerid', 'employeeid', 'memberid', 'badgeid'
-    ]) || String(values[0] || '').trim() || String(Date.now() + idx);
+    ]) || String(values[0] || '').trim();
 
     const name = getByAliases(r, [
       'name', 'officername', 'fullname', 'charactername'
@@ -182,6 +182,13 @@ function mapRosterRecords(records) {
     if (!mapped.Name && mapped.Callsign && mapped.Rank) {
       mapped.Name = mapped.Callsign;
       mapped.Callsign = '';
+    }
+
+    // Only generate an ID when a meaningful row exists.
+    const hasMeaningfulData = [mapped.Name, mapped.Callsign, mapped.Rank, mapped.Division]
+      .some(v => String(v || '').trim() !== '');
+    if (!mapped.ID && hasMeaningfulData) {
+      mapped.ID = 'AUTO-' + (Date.now() + idx);
     }
 
     return mapped;
