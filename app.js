@@ -6,7 +6,7 @@ const AUTH_TOKEN_KEY = 'fwpd_auth_token';
 const DISCIPLINE_SOURCE_URL_KEY = 'fwpd_discipline_source_url';
 const EVALUATION_SOURCE_URL_KEY = 'fwpd_evaluation_source_url';
 const DEFAULT_EVALUATION_SOURCE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR6_40O35zd-9GMo_nTg5KS76Svzt1P8ZKrfBQwPAtLloGFtpE1r4JBP3t-F-meLlDKCpvWzZkhMlOb/pub?output=csv&gid=1513386776';
-const APP_BUILD = '20260308z4';
+const APP_BUILD = '20260308z5';
 const MESSAGE_POLL_MS = 45000;
 
 let currentUser = null;
@@ -402,6 +402,8 @@ document.getElementById("content").innerHTML = `
     <option value="approved">Approved</option>
     <option value="denied">Denied</option>
   </select>
+  <label>Officer</label>
+  <input id="reportOfficerFilter" type="text" placeholder="Search officer name" style="min-width:200px">
   <button id="refreshReportsBtn">Refresh</button>
 </div>
 
@@ -494,6 +496,9 @@ if (typeFilter) typeFilter.addEventListener('change', loadReportItems);
 
 const statusFilter = document.getElementById('reportStatusFilter');
 if (statusFilter) statusFilter.addEventListener('change', loadReportItems);
+
+const officerFilter = document.getElementById('reportOfficerFilter');
+if (officerFilter) officerFilter.addEventListener('input', loadReportItems);
 
 }
 
@@ -1224,8 +1229,10 @@ async function loadReportItems() {
 
   const typeFilterEl = document.getElementById('reportTypeFilter');
   const statusFilterEl = document.getElementById('reportStatusFilter');
+  const officerFilterEl = document.getElementById('reportOfficerFilter');
   const type = String((typeFilterEl && typeFilterEl.value) || 'all').trim();
   const status = String((statusFilterEl && statusFilterEl.value) || 'all').trim();
+  const officerFilterText = String((officerFilterEl && officerFilterEl.value) || '').trim().toLowerCase();
 
   lastLoadedReportItems = [];
   showReportDetailsById('');
@@ -1238,14 +1245,18 @@ async function loadReportItems() {
     if (!response.ok) throw new Error(data.error || 'Failed to load report items');
 
     const items = Array.isArray(data.items) ? data.items : [];
-    if (!items.length) {
+    const filteredItems = officerFilterText
+      ? items.filter((item) => String((item && item.officerName) || '').toLowerCase().includes(officerFilterText))
+      : items;
+
+    if (!filteredItems.length) {
       tableBody.innerHTML = '<tr><td colspan="9">No reports found for current filters.</td></tr>';
       return;
     }
 
-    lastLoadedReportItems = items;
+    lastLoadedReportItems = filteredItems;
 
-    tableBody.innerHTML = items.map((item) => {
+    tableBody.innerHTML = filteredItems.map((item) => {
       const sourceTabText = String(item.sourceTab || '').toLowerCase();
       const canApprove =
         item.type === 'discipline' ||
@@ -1280,8 +1291,8 @@ async function loadReportItems() {
       });
     });
 
-    if (items[0] && items[0].id) {
-      showReportDetailsById(items[0].id);
+    if (filteredItems[0] && filteredItems[0].id) {
+      showReportDetailsById(filteredItems[0].id);
     }
   } catch (err) {
     tableBody.innerHTML = '<tr><td colspan="9">Unable to load reports: ' + escapeHtml(err.message) + '</td></tr>';
