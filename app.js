@@ -248,8 +248,27 @@ async function deleteOfficer(id) {
 }
 
 async function syncGoogleSheets() {
-  const rosterURL = prompt('Paste Roster CSV URL (published Google Sheets CSV link):');
+  const isValidGoogleSheetLink = (input) => {
+    const value = String(input || '').trim();
+    if (!value) return false;
+    try {
+      const u = new URL(value);
+      const host = String(u.hostname || '').toLowerCase();
+      const path = String(u.pathname || '').toLowerCase();
+      if (!host.includes('docs.google.com')) return false;
+      return path.includes('/spreadsheets/');
+    } catch (e) {
+      return false;
+    }
+  };
+
+  const rosterURL = prompt('Paste Roster Google Sheets link (tab link or published CSV):');
   if (!rosterURL) return;
+
+  if (!isValidGoogleSheetLink(rosterURL)) {
+    alert('Invalid roster link. Please paste a Google Sheets link from docs.google.com/spreadsheets/...');
+    return;
+  }
 
   const otherTabsInput = prompt(
     'Optional: add other tabs as comma-separated Name|CSV_URL entries.\nExample:\ndivisions|https://...csv,discipline|https://...csv'
@@ -258,14 +277,25 @@ async function syncGoogleSheets() {
   const tabs = [{ name: 'roster', url: rosterURL.trim() }];
 
   if (otherTabsInput.trim()) {
+    const invalidLinks = [];
     otherTabsInput.split(',').forEach(pair => {
       const parts = pair.split('|');
       if (parts.length >= 2) {
         const name = parts[0].trim();
         const url = parts.slice(1).join('|').trim();
-        if (name && url) tabs.push({ name, url });
+        if (!name || !url) return;
+        if (!isValidGoogleSheetLink(url)) {
+          invalidLinks.push(name || 'unnamed');
+          return;
+        }
+        tabs.push({ name, url });
       }
     });
+
+    if (invalidLinks.length) {
+      alert('Invalid Google Sheets link for tab(s): ' + invalidLinks.join(', ') + '.\nUse docs.google.com/spreadsheets/... links.');
+      return;
+    }
   }
 
   try {
