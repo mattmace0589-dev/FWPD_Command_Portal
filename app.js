@@ -3,6 +3,7 @@
 const AUTO_SYNC_SESSION_KEY = 'fwpd_auto_sync_done';
 const LOCAL_SYNC_TABS_KEY = 'fwpd_sync_tabs_v1';
 const AUTH_TOKEN_KEY = 'fwpd_auth_token';
+const APP_BUILD = '20260308r';
 
 let currentUser = null;
 
@@ -61,6 +62,7 @@ function renderLoginScreen(statusText = '') {
     <div style="max-width:680px;margin:20px auto;border:1px solid rgba(255,255,255,.25);padding:18px;background:rgba(0,0,0,.15)">
       <h2>Command Login</h2>
       <p>Only users listed in <b>Command_Users</b> can create accounts and log in.</p>
+      <div style="font-size:12px;opacity:.85;margin-bottom:8px;">Build: ${APP_BUILD}</div>
 
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin:10px 0 16px 0;">
         <button id="showLoginPane">Login</button>
