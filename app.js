@@ -125,7 +125,16 @@ async function refreshAuthSession() {
     currentUser = null;
   }
   showAuthBanner();
-  if (!currentUser) renderLoginScreen();
+  if (!currentUser) {
+    renderLoginScreen();
+    return;
+  }
+
+  // On initial authenticated load, land on dashboard.
+  const content = document.getElementById('content');
+  if (content && /Command Login/i.test(String(content.textContent || ''))) {
+    loadPage('dashboard');
+  }
 }
 
 function getLocalSyncTabs() {
@@ -224,6 +233,32 @@ are assigned through officer qualification and command approval.
 
 if(page === "discipline"){
 
+
+if(page === "account"){
+
+document.getElementById("content").innerHTML = `
+<h2>My Account</h2>
+<p>Personal command profile information.</p>
+<table>
+  <thead>
+    <tr><th>Field</th><th>Value</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Email</td><td>${(currentUser && currentUser.email) || '-'}</td></tr>
+    <tr><td>Character Name</td><td>${(currentUser && currentUser.characterName) || '-'}</td></tr>
+    <tr><td>Rank</td><td>${(currentUser && currentUser.rank) || '-'}</td></tr>
+    <tr><td>Role</td><td>${(currentUser && currentUser.role) || '-'}</td></tr>
+  </tbody>
+</table>
+<div style="margin-top:12px;">
+  <button id="logoutBtn">Logout</button>
+</div>
+<pre id="accountStatus" style="margin-top:14px;white-space:pre-wrap;background:rgba(0,0,0,.2);padding:10px;border:1px solid rgba(255,255,255,.2)">Logged in.</pre>
+`;
+
+document.getElementById('logoutBtn').addEventListener('click', logoutAccount);
+
+}
 document.getElementById("content").innerHTML = `
 <h2>Discipline Records</h2>
 
@@ -899,6 +934,12 @@ async function loadSheetTabData(name) {
   } catch (err) {
     dataEl.textContent = 'Failed to load tab: ' + err.message;
   }
+}
+
+if (!getAuthToken()) {
+  currentUser = null;
+  showAuthBanner();
+  renderLoginScreen();
 }
 
 refreshAuthSession();
