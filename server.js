@@ -150,23 +150,23 @@ function mapRosterRecords(records) {
 
     const id = getByAliases(r, [
       'id', 'officerid', 'employeeid', 'memberid', 'badgeid'
-    ]) || firstNonEmpty([values[0], values[1]]) || String(Date.now() + idx);
+    ]) || String(values[0] || '').trim() || String(Date.now() + idx);
 
     const name = getByAliases(r, [
       'name', 'officername', 'fullname', 'charactername'
-    ]) || firstNonEmpty([values[1], values[2], values[3]]);
+    ]) || String(values[1] || '').trim() || String(values[0] || '').trim();
 
     const callsign = getByAliases(r, [
       'callsign', 'callsigns', 'call sign', 'radio', 'radioid'
-    ]) || firstNonEmpty([values[6], values[4], values[3]]);
+    ]) || String(values[6] || '').trim();
 
     const rank = getByAliases(r, [
       'rank', 'officerrank', 'grade'
-    ]) || firstNonEmpty([values[8], values[5], values[4]]);
+    ]) || String(values[8] || '').trim();
 
     const division = getByAliases(r, [
       'division', 'unit', 'departmentdivision'
-    ]) || firstNonEmpty([values[9], values[6], values[5]]);
+    ]) || String(values[9] || '').trim();
 
     return {
       ID: id,
