@@ -325,15 +325,49 @@ async function ensureCommandUsersLoaded() {
   const config = loadSheetsConfig();
   const tabs = Array.isArray(config.tabs) ? config.tabs : [];
   const commandTab = tabs.find(t => sanitizeName(t && t.name) === 'command_users' && String(t && t.url || '').trim());
-  if (!commandTab) return records;
 
-  try {
-    await importSheetsTabs([{ name: 'command_users', url: String(commandTab.url).trim() }]);
-    records = getCommandUsersRecords();
-    return records;
-  } catch (e) {
-    return records;
+  const extractSheetId = (urlText) => {
+    const m = String(urlText || '').match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+    return (m && m[1]) ? m[1] : '';
+  };
+
+  const deriveCommandUsersUrls = () => {
+    const sourceUrls = [];
+    tabs.forEach((t) => {
+      const u = String(t && t.url || '').trim();
+      if (u) sourceUrls.push(u);
+    });
+    const envRoster = String(process.env.DEFAULT_ROSTER_URL || '').trim();
+    if (envRoster) sourceUrls.push(envRoster);
+
+    const out = [];
+    sourceUrls.forEach((u) => {
+      const sheetId = extractSheetId(u);
+      if (!sheetId) return;
+      out.push('https://docs.google.com/spreadsheets/d/' + sheetId + '/gviz/tq?tqx=out:csv&sheet=Command_Users');
+      out.push('https://docs.google.com/spreadsheets/d/' + sheetId + '/gviz/tq?tqx=out:csv&sheet=command_users');
+      out.push('https://docs.google.com/spreadsheets/d/' + sheetId + '/gviz/tq?tqx=out:csv&sheet=Command Users');
+    });
+
+    // unique
+    return Array.from(new Set(out));
+  };
+
+  const candidateUrls = commandTab
+    ? [String(commandTab.url).trim()]
+    : deriveCommandUsersUrls();
+
+  for (const candidate of candidateUrls) {
+    try {
+      await importSheetsTabs([{ name: 'command_users', url: candidate }]);
+      records = getCommandUsersRecords();
+      if (records.length) return records;
+    } catch (e) {
+      // Try next candidate.
+    }
   }
+
+  return records;
 }
 
 function findCommandUserByEmailFromRecords(email, records) {

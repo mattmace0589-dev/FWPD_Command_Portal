@@ -89,6 +89,8 @@ function renderLoginScreen(statusText = '') {
         <input id="createEmail" type="email" style="width:100%;max-width:360px"><br>
         <label>Password</label><br>
         <input id="createPassword" type="password" style="width:100%;max-width:360px"><br><br>
+        <label>Verify Password</label><br>
+        <input id="createPasswordVerify" type="password" style="width:100%;max-width:360px"><br><br>
         <button id="createAccountBtn">Create Account</button>
       </div>
 
@@ -674,7 +676,13 @@ async function deleteOfficer(id) {
 async function createAccount() {
   const email = String(document.getElementById('createEmail').value || '').trim();
   const password = String(document.getElementById('createPassword').value || '');
+  const passwordVerify = String(document.getElementById('createPasswordVerify').value || '');
   const status = document.getElementById('accountStatus');
+
+  if (password !== passwordVerify) {
+    if (status) status.textContent = 'Create account failed: Password and Verify Password do not match.';
+    return;
+  }
 
   try {
     const response = await fetch('/api/auth/create-account', {
