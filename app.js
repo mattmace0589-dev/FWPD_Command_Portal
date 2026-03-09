@@ -8,7 +8,7 @@ const EVALUATION_SOURCE_URL_KEY = 'fwpd_evaluation_source_url';
 const AUTO_COMMAND_USERS_LINK_KEY = 'fwpd_command_users_auto_linked';
 const DEFAULT_ROSTER_SOURCE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR6_40O35zd-9GMo_nTg5KS76Svzt1P8ZKrfBQwPAtLloGFtpE1r4JBP3t-F-meLlDKCpvWzZkhMlOb/pub?output=csv&gid=757275616';
 const DEFAULT_EVALUATION_SOURCE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR6_40O35zd-9GMo_nTg5KS76Svzt1P8ZKrfBQwPAtLloGFtpE1r4JBP3t-F-meLlDKCpvWzZkhMlOb/pub?output=csv&gid=1513386776';
-const APP_BUILD = '20260309z17';
+const APP_BUILD = '20260309z18';
 const MESSAGE_POLL_MS = 45000;
 
 let currentUser = null;
@@ -238,7 +238,11 @@ function renderLoginScreen(statusText = '') {
 
       <div style="border:1px solid rgba(255,255,255,.2);padding:10px;margin-bottom:12px;">
         <b>Command_Users Access</b><br>
-        <span style="font-size:13px;opacity:.9">Command_Users sync is managed automatically. If your email is missing, contact an admin.</span>
+        <span style="font-size:13px;opacity:.9">Command_Users sync is managed automatically. If your email is missing, use manual link below or contact an admin.</span>
+        <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <input id="commandUsersUrl" type="text" style="min-width:260px;flex:1" placeholder="Paste Command_Users tab CSV/Google link">
+          <button id="linkCommandUsersBtn">Link Command_Users</button>
+        </div>
       </div>
 
       <div id="loginPane" style="display:block">
@@ -277,6 +281,8 @@ function renderLoginScreen(statusText = '') {
   });
   document.getElementById('createAccountBtn').addEventListener('click', createAccount);
   document.getElementById('loginBtn').addEventListener('click', loginAccount);
+  const linkBtn = document.getElementById('linkCommandUsersBtn');
+  if (linkBtn) linkBtn.addEventListener('click', linkCommandUsersTab);
   autoLinkCommandUsersOnLogin();
 }
 
@@ -1506,7 +1512,11 @@ async function createAccount() {
     if (status) status.textContent = welcome;
     alert(welcome);
   } catch (err) {
-    if (status) status.textContent = 'Create account failed: ' + err.message;
+    const base = String(err && err.message || 'Create account failed');
+    const hint = /command_users|email not found/i.test(base)
+      ? ' If your email is valid, paste your Command_Users link and click "Link Command_Users", then retry.'
+      : '';
+    if (status) status.textContent = 'Create account failed: ' + base + hint;
   }
 }
 
