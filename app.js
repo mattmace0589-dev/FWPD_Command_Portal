@@ -8,7 +8,7 @@ const EVALUATION_SOURCE_URL_KEY = 'fwpd_evaluation_source_url';
 const AUTO_COMMAND_USERS_LINK_KEY = 'fwpd_command_users_auto_linked';
 const DEFAULT_ROSTER_SOURCE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR6_40O35zd-9GMo_nTg5KS76Svzt1P8ZKrfBQwPAtLloGFtpE1r4JBP3t-F-meLlDKCpvWzZkhMlOb/pub?output=csv&gid=757275616';
 const DEFAULT_EVALUATION_SOURCE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR6_40O35zd-9GMo_nTg5KS76Svzt1P8ZKrfBQwPAtLloGFtpE1r4JBP3t-F-meLlDKCpvWzZkhMlOb/pub?output=csv&gid=1513386776';
-const APP_BUILD = '20260309z20';
+const APP_BUILD = '20260309z21';
 const MESSAGE_POLL_MS = 45000;
 
 let currentUser = null;
@@ -242,6 +242,10 @@ function renderLoginScreen(statusText = '') {
         <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
           <button id="syncCommandUsersBtn">Sync Command_Users</button>
         </div>
+        <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <input id="commandUsersUrl" type="text" style="min-width:260px;flex:1" placeholder="Optional: paste Command_Users tab CSV/Google link">
+          <button id="syncCommandUsersByLinkBtn">Sync With Link</button>
+        </div>
       </div>
 
       <div id="loginPane" style="display:block">
@@ -282,6 +286,8 @@ function renderLoginScreen(statusText = '') {
   document.getElementById('loginBtn').addEventListener('click', loginAccount);
   const syncBtn = document.getElementById('syncCommandUsersBtn');
   if (syncBtn) syncBtn.addEventListener('click', runSecureCommandUsersSync);
+  const syncByLinkBtn = document.getElementById('syncCommandUsersByLinkBtn');
+  if (syncByLinkBtn) syncByLinkBtn.addEventListener('click', linkCommandUsersTab);
   autoLinkCommandUsersOnLogin();
 }
 
@@ -1534,7 +1540,7 @@ async function createAccount() {
   } catch (err) {
     const base = String(err && err.message || 'Create account failed');
     const hint = /command_users|email not found/i.test(base)
-      ? ' If your email is valid, click "Sync Command_Users" and retry.'
+      ? ' If your email is valid, click "Sync Command_Users" and retry. If needed, paste the tab URL and click "Sync With Link".'
       : '';
     if (status) status.textContent = 'Create account failed: ' + base + hint;
   }
