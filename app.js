@@ -8,7 +8,7 @@ const EVALUATION_SOURCE_URL_KEY = 'fwpd_evaluation_source_url';
 const AUTO_COMMAND_USERS_LINK_KEY = 'fwpd_command_users_auto_linked';
 const DEFAULT_ROSTER_SOURCE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR6_40O35zd-9GMo_nTg5KS76Svzt1P8ZKrfBQwPAtLloGFtpE1r4JBP3t-F-meLlDKCpvWzZkhMlOb/pub?output=csv&gid=757275616';
 const DEFAULT_EVALUATION_SOURCE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR6_40O35zd-9GMo_nTg5KS76Svzt1P8ZKrfBQwPAtLloGFtpE1r4JBP3t-F-meLlDKCpvWzZkhMlOb/pub?output=csv&gid=1513386776';
-const APP_BUILD = '20260309z19';
+const APP_BUILD = '20260309z20';
 const MESSAGE_POLL_MS = 45000;
 
 let currentUser = null;
@@ -1489,6 +1489,12 @@ async function createAccount() {
   const passwordVerify = String(document.getElementById('createPasswordVerify').value || '');
   const status = document.getElementById('accountStatus');
 
+  const looksLikeEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  if (!looksLikeEmail) {
+    if (status) status.textContent = 'Create account failed: Enter a valid email address (example: name@domain.com).';
+    return;
+  }
+
   if (password !== passwordVerify) {
     if (status) status.textContent = 'Create account failed: Password and Verify Password do not match.';
     return;
@@ -1528,7 +1534,7 @@ async function createAccount() {
   } catch (err) {
     const base = String(err && err.message || 'Create account failed');
     const hint = /command_users|email not found/i.test(base)
-      ? ' If your email is valid, paste your Command_Users link and click "Link Command_Users", then retry.'
+      ? ' If your email is valid, click "Sync Command_Users" and retry.'
       : '';
     if (status) status.textContent = 'Create account failed: ' + base + hint;
   }
