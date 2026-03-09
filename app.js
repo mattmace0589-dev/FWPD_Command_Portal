@@ -5,9 +5,10 @@ const LOCAL_SYNC_TABS_KEY = 'fwpd_sync_tabs_v1';
 const AUTH_TOKEN_KEY = 'fwpd_auth_token';
 const DISCIPLINE_SOURCE_URL_KEY = 'fwpd_discipline_source_url';
 const EVALUATION_SOURCE_URL_KEY = 'fwpd_evaluation_source_url';
+const AUTO_COMMAND_USERS_LINK_KEY = 'fwpd_command_users_auto_linked';
 const DEFAULT_ROSTER_SOURCE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR6_40O35zd-9GMo_nTg5KS76Svzt1P8ZKrfBQwPAtLloGFtpE1r4JBP3t-F-meLlDKCpvWzZkhMlOb/pub?output=csv&gid=757275616';
 const DEFAULT_EVALUATION_SOURCE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR6_40O35zd-9GMo_nTg5KS76Svzt1P8ZKrfBQwPAtLloGFtpE1r4JBP3t-F-meLlDKCpvWzZkhMlOb/pub?output=csv&gid=1513386776';
-const APP_BUILD = '20260308z11';
+const APP_BUILD = '20260309z17';
 const MESSAGE_POLL_MS = 45000;
 
 let currentUser = null;
@@ -25,12 +26,28 @@ function formatUserDisplayName(user) {
 function isPrivilegedRoleClient(roleText) {
   const role = String(roleText || '').trim().toLowerCase();
   if (!role) return false;
-  if (role === 'command') return true;
   if (role.includes('admin')) return true;
   if (role.includes('chief')) return true;
   if (role.includes('commander')) return true;
   if (role.includes('supervisor')) return true;
   return false;
+}
+
+function canPromoteOfficersClient(roleText) {
+  const role = String(roleText || '').trim().toLowerCase();
+  if (!role) return false;
+  if (role.includes('admin')) return true;
+  if (role.includes('chief')) return true;
+  if (role.includes('commander')) return true;
+  return false;
+}
+
+function normalizeAccessRoleClient(roleText) {
+  const role = String(roleText || '').trim().toLowerCase();
+  if (role === 'admin') return 'admin';
+  if (role === 'chief') return 'chief';
+  if (role === 'commander') return 'commander';
+  return 'command';
 }
 
 function getAuthToken() {
@@ -93,8 +110,10 @@ function showAuthBanner() {
 function applyRuntimeLayoutFixes() {
   const sidebar = document.querySelector('.sidebar');
   if (sidebar) {
-    const links = Array.from(sidebar.querySelectorAll('a'));
+    let links = Array.from(sidebar.querySelectorAll('a'));
     let messagesLink = null;
+    let adminLink = null;
+    let ftoLink = null;
     links.forEach((link) => {
       const text = String(link.textContent || '').trim().toLowerCase();
       if (text === 'sheet tabs') {
@@ -103,15 +122,47 @@ function applyRuntimeLayoutFixes() {
       if (text.startsWith('messages')) {
         messagesLink = link;
       }
+      if (text === 'admin') {
+        adminLink = link;
+      }
+      if (text === 'fto') {
+        ftoLink = link;
+      }
     });
 
+    links = Array.from(sidebar.querySelectorAll('a'));
+    const accountLink = links.find((link) => String(link.textContent || '').trim().toLowerCase() === 'account');
+
     if (!messagesLink) {
-      const accountLink = links.find((link) => String(link.textContent || '').trim().toLowerCase() === 'account');
       messagesLink = document.createElement('a');
       messagesLink.setAttribute('href', "javascript:loadPage('messages')");
       messagesLink.textContent = 'Messages';
       if (accountLink) sidebar.insertBefore(messagesLink, accountLink);
       else sidebar.appendChild(messagesLink);
+    }
+
+    const showAdmin = !!currentUser && isPrivilegedRoleClient((currentUser && currentUser.role) || '');
+    const showFto = !!currentUser && canPromoteOfficersClient((currentUser && currentUser.role) || '');
+    if (showAdmin && !adminLink) {
+      adminLink = document.createElement('a');
+      adminLink.setAttribute('href', "javascript:loadPage('admin')");
+      adminLink.textContent = 'Admin';
+      if (accountLink) sidebar.insertBefore(adminLink, accountLink);
+      else sidebar.appendChild(adminLink);
+    }
+    if (!showAdmin && adminLink) {
+      adminLink.remove();
+    }
+
+    if (showFto && !ftoLink) {
+      ftoLink = document.createElement('a');
+      ftoLink.setAttribute('href', "javascript:loadPage('fto')");
+      ftoLink.textContent = 'FTO';
+      if (accountLink) sidebar.insertBefore(ftoLink, accountLink);
+      else sidebar.appendChild(ftoLink);
+    }
+    if (!showFto && ftoLink) {
+      ftoLink.remove();
     }
 
     const countText = unreadMessageCount > 0 ? ('Messages (' + unreadMessageCount + ')') : 'Messages';
@@ -186,10 +237,8 @@ function renderLoginScreen(statusText = '') {
       </div>
 
       <div style="border:1px solid rgba(255,255,255,.2);padding:10px;margin-bottom:12px;">
-        <b>First-time setup</b><br>
-        <span style="font-size:13px;opacity:.9">If account creation says email not found, link your Command_Users tab once.</span><br>
-        <input id="commandUsersUrl" type="text" placeholder="Paste Command_Users Google Sheet/CSV link" style="margin-top:8px;width:100%;max-width:540px"><br><br>
-        <button id="linkCommandUsersBtn">Link Command_Users Tab</button>
+        <b>Command_Users Access</b><br>
+        <span style="font-size:13px;opacity:.9">Command_Users sync is managed automatically. If your email is missing, contact an admin.</span>
       </div>
 
       <div id="loginPane" style="display:block">
@@ -226,9 +275,35 @@ function renderLoginScreen(statusText = '') {
     loginPane.style.display = 'none';
     createPane.style.display = 'block';
   });
-  document.getElementById('linkCommandUsersBtn').addEventListener('click', linkCommandUsersTab);
   document.getElementById('createAccountBtn').addEventListener('click', createAccount);
   document.getElementById('loginBtn').addEventListener('click', loginAccount);
+  autoLinkCommandUsersOnLogin();
+}
+
+async function linkCommandUsersTabByUrl(url) {
+  const sourceUrl = String(url || '').trim();
+  if (!sourceUrl) return null;
+  const response = await fetch('/api/auth/link-command-users', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url: sourceUrl })
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || 'Failed to link Command_Users tab');
+  return data;
+}
+
+async function autoLinkCommandUsersOnLogin() {
+  if (sessionStorage.getItem(AUTO_COMMAND_USERS_LINK_KEY) === '1') return;
+
+  try {
+    const response = await fetch('/api/auth/ensure-command-users', { method: 'POST' });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Failed to sync Command_Users');
+    sessionStorage.setItem(AUTO_COMMAND_USERS_LINK_KEY, '1');
+  } catch (err) {
+    // Silent by design so login UI stays clean for non-admin users.
+  }
 }
 
 async function linkCommandUsersTab() {
@@ -240,13 +315,7 @@ async function linkCommandUsersTab() {
   }
 
   try {
-    const response = await fetch('/api/auth/link-command-users', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url })
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Failed to link Command_Users tab');
+    const data = await linkCommandUsersTabByUrl(url);
 
     const rows = (((data || {}).import || {}).result || []).find(x => x.name === 'command_users');
     const rowCount = rows && typeof rows.rows === 'number' ? rows.rows : 0;
@@ -437,10 +506,6 @@ document.getElementById("content").innerHTML = `
   </table>
 </div>
 
-<div style="margin-top:12px;border:1px solid rgba(255,255,255,.2);padding:10px;background:rgba(0,0,0,.15)">
-  <b>Selected Report Details</b>
-  <pre id="reportDetailsBox" style="margin-top:8px;white-space:pre-wrap;background:rgba(0,0,0,.2);padding:10px;border:1px solid rgba(255,255,255,.2)">Click a report subject to view full report details.</pre>
-</div>
 `;
 
 loadReportsSummary();
@@ -525,7 +590,8 @@ document.getElementById("content").innerHTML = `
 <div style="margin-top:12px;border:1px solid rgba(255,255,255,.2);padding:10px;background:rgba(0,0,0,.15)">
   <b>Compose Message</b>
   <div style="margin-top:8px;display:grid;grid-template-columns:1fr;gap:8px;max-width:760px;">
-    <select id="msgRecipient"><option value="">Loading recipients...</option></select>
+    <label for="msgRecipient">Recipients (Ctrl/Cmd+Click for multiple)</label>
+    <select id="msgRecipient" multiple size="8"><option value="">Loading recipients...</option></select>
     <input id="msgSubject" type="text" placeholder="Subject">
     <textarea id="msgBody" rows="5" placeholder="Message body"></textarea>
   </div>
@@ -570,6 +636,100 @@ if (sentBtn) sentBtn.addEventListener('click', loadSentMessages);
 
 loadMessageRecipients();
 loadInboxMessages();
+
+}
+
+/* FTO */
+
+if(page === "fto"){
+
+if(!canPromoteOfficersClient((currentUser && currentUser.role) || '')){
+loadPage('dashboard');
+return;
+}
+
+document.getElementById("content").innerHTML = `
+<h2>Field Training Officer</h2>
+<p><b>HEAD OF TRAINING CAPTAIN JASON GREEN (NORA DIVISION)</b></p>
+
+<div style="margin:10px 0;border:1px solid rgba(255,255,255,.2);padding:10px;background:rgba(0,0,0,.15)">
+  <b>Add FTO Officer</b>
+  <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+    <select id="ftoOfficerSelect" style="min-width:260px;flex:1"></select>
+    <button id="addFtoOfficerBtn">Add</button>
+    <button id="refreshFtoBtn">Refresh</button>
+  </div>
+</div>
+
+<pre id="ftoStatus" style="margin-top:10px;white-space:pre-wrap;background:rgba(0,0,0,.2);padding:10px;border:1px solid rgba(255,255,255,.2)">Loading FTO roster...</pre>
+
+<div style="margin-top:10px;overflow:auto">
+  <table id="ftoTable">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Name</th>
+        <th>Callsign</th>
+        <th>Rank</th>
+        <th>Division</th>
+        <th>Added By</th>
+        <th>Added At</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+</div>
+`;
+
+const addBtn = document.getElementById('addFtoOfficerBtn');
+if (addBtn) addBtn.addEventListener('click', addFtoOfficer);
+
+const refreshBtn = document.getElementById('refreshFtoBtn');
+if (refreshBtn) refreshBtn.addEventListener('click', loadFtoPage);
+
+loadFtoPage();
+
+}
+
+/* ADMIN */
+
+if(page === "admin"){
+
+if(!isPrivilegedRoleClient((currentUser && currentUser.role) || '')){
+loadPage('dashboard');
+return;
+}
+
+document.getElementById("content").innerHTML = `
+<h2>Admin Access Control</h2>
+<p>Grant or revoke admin access for users in Command_Users.</p>
+
+<div style="margin:8px 0">
+  <button id="refreshAdminUsersBtn">Refresh</button>
+</div>
+
+<pre id="adminStatus" style="margin-top:8px;white-space:pre-wrap;background:rgba(0,0,0,.2);padding:10px;border:1px solid rgba(255,255,255,.2)">Loading users...</pre>
+
+<div style="margin-top:10px;overflow:auto">
+  <table id="adminUsersTable">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Email</th>
+        <th>Account</th>
+        <th>Role</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+</div>
+`;
+
+const refreshBtn = document.getElementById('refreshAdminUsersBtn');
+if (refreshBtn) refreshBtn.addEventListener('click', loadAdminUsers);
+loadAdminUsers();
 
 }
 
@@ -650,6 +810,8 @@ document.getElementById("content").innerHTML = `
 <th>Callsign</th>
 <th>Rank</th>
 <th>Division</th>
+<th>Status</th>
+<th>Activity</th>
 <th>Notes</th>
 <th>Actions</th>
 </tr>
@@ -716,6 +878,8 @@ async function loadRoster(){
       let callsign = pick(item, ['Callsign', 'callsign', 'Call_Sign', 'call_sign']);
       const rank = pick(item, ['Rank', 'rank']);
       const division = pick(item, ['Division', 'division', 'Unit', 'unit']);
+      const status = pick(item, ['Status', 'status']);
+      const activityStatus = pick(item, ['Activity_Status', 'activity_status', 'ActivityStatus', 'activitystatus', 'Activity Status', 'activity status']);
       const notes = pick(item, ['Notes', 'notes', 'Officer_Notes', 'officer_notes', 'Comments', 'comments']);
 
       if (!name && callsign && /[a-z]/i.test(callsign) && !/\d/.test(callsign)) {
@@ -752,6 +916,8 @@ async function loadRoster(){
         <td>${callsign}</td>
         <td>${rank}</td>
         <td>${division}</td>
+        <td>${escapeHtml(status || '-')}</td>
+        <td>${escapeHtml(activityStatus || '-')}</td>
         <td title="${escapeHtml(notes || '')}">${escapeHtml(notes || '-')}</td>
         <td class="actions-cell">
           <div class="row-actions">
@@ -888,7 +1054,34 @@ async function enrichOfficerProfileData(officer) {
 function renderOfficerProfile(officer) {
   const profileId = pickOfficerField(officer, ['ID', 'id', 'Officer_ID', 'officer_id']);
   const profileName = pickOfficerField(officer, ['Name', 'name', 'RP_Name', 'rp_name', 'Officer_Name', 'officer_name']);
+  const profileRank = pickOfficerField(officer, ['Rank', 'rank', 'officer_rank']);
+  const profileDivision = pickOfficerField(officer, ['Division', 'division', 'Unit', 'unit']);
+  const profileStatus = pickOfficerField(officer, ['Status', 'status']);
+  const profileActivityStatus = pickOfficerField(officer, ['Activity_Status', 'activity_status', 'ActivityStatus', 'activitystatus', 'Activity Status', 'activity status']);
+  const profileFto = pickOfficerField(officer, ['IsFTO', 'is_fto', 'FTO', 'fto']);
+  const isFtoActive = ['yes', 'true', '1', 'fto', 'active'].includes(String(profileFto || '').trim().toLowerCase());
   const profileNotes = pickOfficerField(officer, ['Notes', 'notes', 'Officer_Notes', 'officer_notes', 'Comments', 'comments']);
+  const canPromote = !!currentUser && canPromoteOfficersClient((currentUser && currentUser.role) || '');
+  const promotionEditor = (canPromote && profileId)
+    ? `
+    <div style="margin-top:12px;border:1px solid rgba(255,255,255,.2);padding:10px;background:rgba(0,0,0,.15)">
+      <b>Promotion Controls</b><br>
+      <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;max-width:820px;">
+        <label style="min-width:72px;">Rank</label>
+        <input id="promotionRankInput" type="text" value="${escapeHtml(profileRank || '')}" style="min-width:220px;flex:1;">
+      </div>
+      <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;max-width:820px;">
+        <label style="min-width:72px;">Division</label>
+        <input id="promotionDivisionInput" type="text" value="${escapeHtml(profileDivision || '')}" style="min-width:220px;flex:1;">
+      </div>
+      <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;max-width:820px;">
+        <label style="min-width:72px;">Reason</label>
+        <input id="promotionReasonInput" type="text" placeholder="Optional promotion note" style="min-width:220px;flex:1;">
+      </div>
+      <button id="savePromotionBtn" style="margin-top:8px;">Apply Promotion</button>
+      <pre id="promotionStatus" style="margin-top:8px;white-space:pre-wrap;background:rgba(0,0,0,.2);padding:8px;border:1px solid rgba(255,255,255,.2)">Ready.</pre>
+    </div>`
+    : '';
   const notesEditor = (isLoggedIn() && profileId)
     ? `
     <div style="margin-top:12px;border:1px solid rgba(255,255,255,.2);padding:10px;background:rgba(0,0,0,.15)">
@@ -923,8 +1116,14 @@ function renderOfficerProfile(officer) {
 
     <p><b>ID:</b> ${profileId || '-'}</p>
     <p><b>Name:</b> ${profileName || '-'}</p>
+    <p><b>Rank:</b> ${escapeHtml(profileRank || '-')}</p>
+    <p><b>Division:</b> ${escapeHtml(profileDivision || '-')}</p>
+    <p><b>FTO:</b> ${isFtoActive ? '<span style="font-weight:700;color:#ffd166">ACTIVE TRAINER</span>' : '-'}</p>
+    <p><b>Status:</b> ${escapeHtml(profileStatus || '-')}</p>
+    <p><b>Activity Status:</b> ${escapeHtml(profileActivityStatus || '-')}</p>
     <p><b>Notes:</b></p>
     <pre style="margin-top:6px;white-space:pre-wrap;background:rgba(0,0,0,.2);padding:10px;border:1px solid rgba(255,255,255,.2)">${escapeHtml(profileNotes || 'No notes added.')}</pre>
+    ${promotionEditor}
     ${notesEditor}
 
     <h3 style="margin-top:18px;">All Imported Officer Data</h3>
@@ -934,6 +1133,48 @@ function renderOfficerProfile(officer) {
   if (isLoggedIn() && profileId) {
     const saveBtn = document.getElementById('saveOfficerNotesBtn');
     if (saveBtn) saveBtn.addEventListener('click', () => saveOfficerNotes(profileId));
+  }
+  if (canPromote && profileId) {
+    const promoteBtn = document.getElementById('savePromotionBtn');
+    if (promoteBtn) promoteBtn.addEventListener('click', () => promoteOfficerProfile(profileId));
+  }
+}
+
+async function promoteOfficerProfile(officerId) {
+  if (!isLoggedIn()) {
+    alert('Login required for promotions.');
+    return;
+  }
+
+  const id = String(officerId || '').trim();
+  if (!id) {
+    alert('Cannot promote: missing officer ID.');
+    return;
+  }
+
+  const rank = String(((document.getElementById('promotionRankInput') || {}).value) || '').trim();
+  const division = String(((document.getElementById('promotionDivisionInput') || {}).value) || '').trim();
+  const reason = String(((document.getElementById('promotionReasonInput') || {}).value) || '').trim();
+  const status = document.getElementById('promotionStatus');
+
+  if (!rank && !division) {
+    if (status) status.textContent = 'Enter rank and/or division first.';
+    return;
+  }
+
+  try {
+    const response = await authFetch('/api/roster/' + encodeURIComponent(id) + '/promote', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rank, division, reason })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Promotion failed');
+
+    if (status) status.textContent = payload.message || 'Promotion updated.';
+    await openOfficerProfile({ id });
+  } catch (err) {
+    if (status) status.textContent = 'Promotion failed: ' + err.message;
   }
 }
 
@@ -980,6 +1221,12 @@ async function openOfficerNotes(id) {
 }
 
 function showOfficerForm(id = null, data = {}) {
+  const statusValue = pickOfficerField(data, ['Status', 'status']);
+  const activityStatusValue = pickOfficerField(data, ['Activity_Status', 'activity_status', 'ActivityStatus', 'activitystatus', 'Activity Status', 'activity status']);
+  const emailValue = pickOfficerField(data, ['Email', 'email', 'Google_Email', 'google_email', 'Email_Address', 'email_address']);
+  const accessRoleValue = normalizeAccessRoleClient(pickOfficerField(data, ['Access_Role', 'access_role', 'Role', 'role', 'RoleOverride', 'roleOverride']));
+  const canManageAccess = !!currentUser && canPromoteOfficersClient((currentUser && currentUser.role) || '');
+
   const formHtml = `
     <div id="officerForm" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:white;color:#111;padding:20px;border:1px solid #ccc;z-index:1000;box-shadow:0 0 10px rgba(0,0,0,0.3);min-width:260px;">
       <h3>${id ? 'Edit' : 'Add'} Officer</h3>
@@ -988,6 +1235,19 @@ function showOfficerForm(id = null, data = {}) {
       <label>Callsign: <input id="formCallsign" value="${data.Callsign || ''}"></label><br>
       <label>Rank: <input id="formRank" value="${data.Rank || ''}"></label><br>
       <label>Division: <input id="formDivision" value="${data.Division || ''}"></label><br>
+      <label>Status: <input id="formStatus" value="${escapeHtml(statusValue || '')}"></label><br>
+      <label>Activity Status: <input id="formActivityStatus" value="${escapeHtml(activityStatusValue || '')}"></label><br>
+      <label>Email: <input id="formEmail" value="${escapeHtml(emailValue || '')}"></label><br>
+      ${canManageAccess ? `
+      <label>Portal Access Role:
+        <select id="formAccessRole">
+          <option value="command" ${accessRoleValue === 'command' ? 'selected' : ''}>Command</option>
+          <option value="commander" ${accessRoleValue === 'commander' ? 'selected' : ''}>Commander</option>
+          <option value="chief" ${accessRoleValue === 'chief' ? 'selected' : ''}>Chief</option>
+          <option value="admin" ${accessRoleValue === 'admin' ? 'selected' : ''}>Admin</option>
+        </select>
+      </label><br>
+      <small>Chiefs, commanders, and admins can promote/demote portal access roles.</small><br>` : ''}
       <label>Notes:</label><br>
       <textarea id="formNotes" rows="4" style="width:100%;max-width:380px;">${String(data.Notes || '')}</textarea><br>
       <button id="saveOfficer">Save</button>
@@ -1014,6 +1274,9 @@ async function saveOfficer(id) {
     Callsign: document.getElementById('formCallsign').value,
     Rank: document.getElementById('formRank').value,
     Division: document.getElementById('formDivision').value,
+    Status: document.getElementById('formStatus').value,
+    Activity_Status: document.getElementById('formActivityStatus').value,
+    Email: document.getElementById('formEmail').value,
     Notes: document.getElementById('formNotes').value
   };
   try {
@@ -1024,7 +1287,26 @@ async function saveOfficer(id) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
-    if (!response.ok) throw new Error('Save failed');
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Save failed');
+
+    const canManageAccess = !!currentUser && canPromoteOfficersClient((currentUser && currentUser.role) || '');
+    if (canManageAccess) {
+      const targetEmail = String(data.Email || '').trim();
+      const accessRoleEl = document.getElementById('formAccessRole');
+      const targetRole = normalizeAccessRoleClient(accessRoleEl ? accessRoleEl.value : 'command');
+      if (targetEmail) {
+        const accessRes = await authFetch('/api/admin/set-role', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: targetEmail, role: targetRole })
+        });
+        const accessPayload = await accessRes.json().catch(() => ({}));
+        if (!accessRes.ok) throw new Error(accessPayload.error || 'Officer saved, but access update failed.');
+      }
+    }
+
     closeForm();
     loadRoster();
   } catch (err) {
@@ -1040,7 +1322,7 @@ async function editOfficer(id) {
   try {
     const response = await fetch(`/api/roster?id=${id}`);
     const data = await response.json();
-    const item = data.find(x => String((x && x.ID) || '') === String(id));
+    const item = data.find(x => pickOfficerField(x, ['ID', 'id', 'Officer_ID', 'officer_id']) === String(id));
     if (item) {
       showOfficerForm(id, item);
     } else {
@@ -1063,6 +1345,121 @@ async function deleteOfficer(id) {
     loadRoster();
   } catch (err) {
     alert('Error deleting: ' + err.message);
+  }
+}
+
+async function loadFtoPage() {
+  await Promise.all([loadFtoRosterOptions(), loadFtoList()]);
+}
+
+async function loadFtoRosterOptions() {
+  const select = document.getElementById('ftoOfficerSelect');
+  if (!select) return;
+  select.innerHTML = '<option value="">Loading roster...</option>';
+  try {
+    const response = await fetch('/api/roster');
+    const data = await response.json();
+    if (!response.ok) throw new Error('Failed to load roster');
+
+    const rows = Array.isArray(data) ? data : [];
+    const options = rows.map((item) => {
+      const id = pickOfficerField(item, ['ID', 'id', 'Officer_ID', 'officer_id']);
+      const name = pickOfficerField(item, ['Name', 'name', 'RP_Name', 'rp_name', 'Officer_Name', 'officer_name']);
+      const callsign = pickOfficerField(item, ['Callsign', 'callsign', 'Call_Sign', 'call_sign']);
+      const rank = pickOfficerField(item, ['Rank', 'rank']);
+      const division = pickOfficerField(item, ['Division', 'division', 'Unit', 'unit']);
+      if (!id) return null;
+      return {
+        id,
+        label: (rank ? rank + ' ' : '') + (name || '(No Name)') + (callsign ? ' | ' + callsign : '') + (division ? ' | ' + division : '')
+      };
+    }).filter(Boolean).sort((a, b) => a.label.localeCompare(b.label));
+
+    select.innerHTML = '<option value="">Select officer from roster...</option>';
+    options.forEach((o) => {
+      const opt = document.createElement('option');
+      opt.value = o.id;
+      opt.textContent = o.label;
+      select.appendChild(opt);
+    });
+  } catch (err) {
+    select.innerHTML = '<option value="">Roster unavailable</option>';
+  }
+}
+
+async function loadFtoList() {
+  const status = document.getElementById('ftoStatus');
+  const body = document.querySelector('#ftoTable tbody');
+  if (!body) return;
+
+  body.innerHTML = '';
+  try {
+    const response = await authFetch('/api/fto');
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Failed to load FTO list');
+
+    const items = Array.isArray(data.items) ? data.items : [];
+    if (!items.length) {
+      if (status) status.textContent = 'No FTO officers added yet.';
+      return;
+    }
+
+    items.forEach((item) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${escapeHtml(item.officerId || '-')}</td>
+        <td>${escapeHtml(item.name || '-')}</td>
+        <td>${escapeHtml(item.callsign || '-')}</td>
+        <td>${escapeHtml(item.rank || '-')}</td>
+        <td>${escapeHtml(item.division || '-')}</td>
+        <td>${escapeHtml(item.addedBy || '-')}</td>
+        <td>${escapeHtml(item.addedAt ? new Date(item.addedAt).toLocaleString() : '-')}</td>
+        <td><button onclick="removeFtoOfficer('${String(item.officerId || '').replace(/'/g, "\\'")}')">Remove</button></td>
+      `;
+      body.appendChild(tr);
+    });
+    if (status) status.textContent = 'FTO roster loaded (' + items.length + ' officers).';
+  } catch (err) {
+    if (status) status.textContent = 'Error: ' + err.message;
+  }
+}
+
+async function addFtoOfficer() {
+  const select = document.getElementById('ftoOfficerSelect');
+  const status = document.getElementById('ftoStatus');
+  const officerId = String((select && select.value) || '').trim();
+  if (!officerId) {
+    if (status) status.textContent = 'Select an officer first.';
+    return;
+  }
+  try {
+    const response = await authFetch('/api/fto', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ officerId })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || 'Failed to add FTO officer');
+    if (status) status.textContent = data.message || 'FTO officer added.';
+    await loadFtoList();
+  } catch (err) {
+    if (status) status.textContent = 'Add failed: ' + err.message;
+  }
+}
+
+async function removeFtoOfficer(officerId) {
+  const status = document.getElementById('ftoStatus');
+  const id = String(officerId || '').trim();
+  if (!id) return;
+  if (!confirm('Remove this officer from FTO list?')) return;
+  try {
+    const response = await authFetch('/api/fto/' + encodeURIComponent(id), { method: 'DELETE' });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || 'Failed to remove FTO officer');
+    if (status) status.textContent = data.message || 'FTO officer removed.';
+    await loadFtoList();
+  } catch (err) {
+    if (status) status.textContent = 'Remove failed: ' + err.message;
   }
 }
 
@@ -1089,20 +1486,14 @@ async function createAccount() {
     let response = await submitCreate();
     let data = await response.json();
 
-    // If email lookup fails, try auto-linking command_users from setup URL and retry once.
+    // If email lookup fails, trigger a server-side Command_Users ensure and retry once.
     if (!response.ok && /email not found in command_users/i.test(String(data.error || ''))) {
-      const setupUrlEl = document.getElementById('commandUsersUrl');
-      const setupUrl = String((setupUrlEl && setupUrlEl.value) || '').trim();
-      if (setupUrl) {
-        const linkResp = await fetch('/api/auth/link-command-users', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: setupUrl })
-        });
-        if (linkResp.ok) {
-          response = await submitCreate();
-          data = await response.json();
-        }
+      try {
+        await fetch('/api/auth/ensure-command-users', { method: 'POST' });
+        response = await submitCreate();
+        data = await response.json();
+      } catch (e) {
+        // Ignore and preserve original create-account error handling.
       }
     }
 
@@ -1257,46 +1648,95 @@ function formatDateTime(value) {
 }
 
 function showReportDetailsById(reportId) {
-  const box = document.getElementById('reportDetailsBox');
-  if (!box) return;
-
   const wantedId = String(reportId || '').trim();
-  if (!wantedId) {
-    box.textContent = 'Click a report subject to view full report details.';
-    return;
-  }
+  if (!wantedId) return;
 
   const item = lastLoadedReportItems.find((x) => String((x && x.id) || '') === wantedId);
-  if (!item) {
-    box.textContent = 'Report details unavailable. Refresh reports and try again.';
-    return;
-  }
+  if (!item) return;
+
+  renderReportProfile(item);
+}
+
+function reportCanBeApproved(item) {
+  const sourceTabText = String((item && item.sourceTab) || '').toLowerCase();
+  return (
+    item && (
+      item.type === 'discipline' ||
+      item.type === 'evaluation' ||
+      sourceTabText.includes('disciplin') ||
+      sourceTabText.includes('eval')
+    )
+  );
+}
+
+function renderReportProfile(item) {
+  if (!item) return;
 
   const rawRow = (item.rawRow && typeof item.rawRow === 'object') ? item.rawRow : {};
-  const rawKeys = Object.keys(rawRow);
-  const cleanedRaw = {};
-  rawKeys.sort().forEach((key) => {
-    const value = rawRow[key];
-    if (String(value || '').trim() !== '') {
-      cleanedRaw[key] = value;
-    }
-  });
+  const importedRows = Object.keys(rawRow)
+    .filter((k) => String(rawRow[k] || '').trim() !== '')
+    .sort()
+    .map((k) => [k, rawRow[k] || '-']);
+  const rows = importedRows.length ? importedRows : [['(no imported fields)', '-']];
 
-  const lines = [
-    'Type: ' + String(item.type || '-'),
-    'Subject: ' + String(item.subject || '-'),
-    'Officer: ' + String(item.officerName || '-'),
-    'Date: ' + String(item.reportDate || '-'),
-    'Source Tab: ' + String(item.sourceTab || '-'),
-    'Status: ' + String(item.approvalStatus || 'pending'),
-    'Approved By: ' + String(item.approvedBy || '-'),
-    'Approved At: ' + String(formatDateTime(item.approvedAt || '')),
-    '',
-    'Raw Report Fields:',
-    JSON.stringify(Object.keys(cleanedRaw).length ? cleanedRaw : rawRow, null, 2)
-  ];
+  const rowsToTable = (tableRows) => {
+    let html = '<table><thead><tr><th>Field</th><th>Value</th></tr></thead><tbody>';
+    tableRows.forEach((r) => {
+      html += '<tr><td>' + escapeHtml(r[0]) + '</td><td>' + escapeHtml(r[1]) + '</td></tr>';
+    });
+    html += '</tbody></table>';
+    return html;
+  };
 
-  box.textContent = lines.join('\n');
+  const canApprove = reportCanBeApproved(item);
+  const actionsHtml = canApprove
+    ? '<button id="reportApproveBtn">Approve</button> ' +
+      '<button id="reportDenyBtn">Deny</button> ' +
+      '<button id="reportResetBtn">Reset</button>'
+    : '<span style="opacity:.85">No approval actions for this report type.</span>';
+
+  document.getElementById('content').innerHTML = `
+    <h2>Report Profile</h2>
+    <div style="margin:8px 0 16px 0;display:flex;gap:8px;flex-wrap:wrap;">
+      <button id="reportBackBtn">Back to Reports</button>
+      ${actionsHtml}
+    </div>
+
+    <p><b>Type:</b> ${escapeHtml(item.type || '-')}</p>
+    <p><b>Subject:</b> ${escapeHtml(item.subject || '-')}</p>
+    <p><b>Officer:</b> ${escapeHtml(item.officerName || '-')}</p>
+    <p><b>Date:</b> ${escapeHtml(item.reportDate || '-')}</p>
+    <p><b>Source Tab:</b> ${escapeHtml(item.sourceTab || '-')}</p>
+    <p><b>Status:</b> ${escapeHtml(item.approvalStatus || 'pending')}</p>
+    <p><b>Approved By:</b> ${escapeHtml(item.approvedBy || '-')}</p>
+    <p><b>Approved At:</b> ${escapeHtml(formatDateTime(item.approvedAt || ''))}</p>
+
+    <h3 style="margin-top:18px;">All Imported Report Data</h3>
+    ${rowsToTable(rows)}
+  `;
+
+  const backBtn = document.getElementById('reportBackBtn');
+  if (backBtn) {
+    backBtn.addEventListener('click', () => loadPage('reports'));
+  }
+
+  if (canApprove) {
+    const approveBtn = document.getElementById('reportApproveBtn');
+    const denyBtn = document.getElementById('reportDenyBtn');
+    const resetBtn = document.getElementById('reportResetBtn');
+    if (approveBtn) approveBtn.addEventListener('click', async () => {
+      await setReportApproval(item.id, 'approved');
+      loadPage('reports');
+    });
+    if (denyBtn) denyBtn.addEventListener('click', async () => {
+      await setReportApproval(item.id, 'denied');
+      loadPage('reports');
+    });
+    if (resetBtn) resetBtn.addEventListener('click', async () => {
+      await setReportApproval(item.id, 'pending');
+      loadPage('reports');
+    });
+  }
 }
 
 async function loadReportItems() {
@@ -1311,7 +1751,6 @@ async function loadReportItems() {
   const officerFilterText = String((officerFilterEl && officerFilterEl.value) || '').trim().toLowerCase();
 
   lastLoadedReportItems = [];
-  showReportDetailsById('');
   tableBody.innerHTML = '<tr><td colspan="9">Loading reports...</td></tr>';
 
   try {
@@ -1333,12 +1772,7 @@ async function loadReportItems() {
     lastLoadedReportItems = filteredItems;
 
     tableBody.innerHTML = filteredItems.map((item) => {
-      const sourceTabText = String(item.sourceTab || '').toLowerCase();
-      const canApprove =
-        item.type === 'discipline' ||
-        item.type === 'evaluation' ||
-        sourceTabText.includes('disciplin') ||
-        sourceTabText.includes('eval');
+      const canApprove = reportCanBeApproved(item);
       const statusText = escapeHtml(item.approvalStatus || 'pending');
       const actionButtons = canApprove
         ? '<button onclick="setReportApproval(\'' + escapeHtml(item.id) + '\',\'approved\')">Approve</button> ' +
@@ -1366,10 +1800,6 @@ async function loadReportItems() {
         showReportDetailsById(reportId);
       });
     });
-
-    if (filteredItems[0] && filteredItems[0].id) {
-      showReportDetailsById(filteredItems[0].id);
-    }
   } catch (err) {
     tableBody.innerHTML = '<tr><td colspan="9">Unable to load reports: ' + escapeHtml(err.message) + '</td></tr>';
   }
@@ -1536,7 +1966,7 @@ async function loadMessageRecipients() {
       return;
     }
 
-    select.innerHTML = '<option value="">Select recipient...</option>' + users.map((u) => {
+    select.innerHTML = users.map((u) => {
       const email = escapeHtml(u.email || '');
       const label = escapeHtml((u.displayName || u.email || '') + ' (' + (u.email || '') + ')');
       return '<option value="' + email + '">' + label + '</option>';
@@ -1618,13 +2048,16 @@ async function loadSentMessages() {
 }
 
 async function sendInternalMessage() {
-  const recipient = String((document.getElementById('msgRecipient') || {}).value || '').trim();
+  const recipientSelect = document.getElementById('msgRecipient');
+  const recipients = Array.from((recipientSelect && recipientSelect.selectedOptions) || [])
+    .map((opt) => String(opt.value || '').trim())
+    .filter(Boolean);
   const subject = String((document.getElementById('msgSubject') || {}).value || '').trim();
   const body = String((document.getElementById('msgBody') || {}).value || '').trim();
   const status = document.getElementById('messagesStatus');
 
-  if (!recipient) {
-    if (status) status.textContent = 'Select a recipient first.';
+  if (!recipients.length) {
+    if (status) status.textContent = 'Select at least one recipient first.';
     return;
   }
 
@@ -1632,19 +2065,96 @@ async function sendInternalMessage() {
     const response = await authFetch('/api/messages/send', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ toEmail: recipient, subject, body })
+      body: JSON.stringify({ toEmails: recipients, subject, body })
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Message send failed');
 
-    if (status) status.textContent = 'Message sent to ' + recipient + '.';
+    const sentCount = Number(data.count || 0);
+    const invalidCount = Array.isArray(data.invalidRecipients) ? data.invalidRecipients.length : 0;
+    if (status) {
+      status.textContent = 'Sent ' + sentCount + ' message(s).' +
+        (invalidCount ? (' Skipped ' + invalidCount + ' invalid recipient(s).') : '');
+    }
     const subjectEl = document.getElementById('msgSubject');
     const bodyEl = document.getElementById('msgBody');
+    const recipientEl = document.getElementById('msgRecipient');
     if (subjectEl) subjectEl.value = '';
     if (bodyEl) bodyEl.value = '';
+    if (recipientEl) Array.from(recipientEl.options || []).forEach((opt) => { opt.selected = false; });
     loadSentMessages();
   } catch (err) {
     if (status) status.textContent = 'Send failed: ' + err.message;
+  }
+}
+
+async function loadAdminUsers() {
+  const tbody = document.querySelector('#adminUsersTable tbody');
+  const status = document.getElementById('adminStatus');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="5">Loading...</td></tr>';
+
+  try {
+    const response = await authFetch('/api/admin/users');
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Failed to load admin users');
+
+    const users = Array.isArray(data.users) ? data.users : [];
+    if (!users.length) {
+      tbody.innerHTML = '<tr><td colspan="5">No command users found.</td></tr>';
+      if (status) status.textContent = 'No command users available.';
+      return;
+    }
+
+    tbody.innerHTML = users.map((u) => {
+      const email = escapeHtml(u.email || '');
+      const name = escapeHtml(u.displayName || u.email || '-');
+      const role = escapeHtml(u.role || '-');
+      const hasAccount = !!u.hasAccount;
+      const isAdmin = !!u.isAdmin;
+      const actionBtn = hasAccount
+        ? '<button class="admin-toggle-btn" data-email="' + email + '" data-next="' + (isAdmin ? '0' : '1') + '">' + (isAdmin ? 'Revoke Admin' : 'Grant Admin') + '</button>'
+        : '-';
+
+      return '<tr>' +
+        '<td>' + name + '</td>' +
+        '<td>' + email + '</td>' +
+        '<td>' + (hasAccount ? 'Yes' : 'No') + '</td>' +
+        '<td>' + role + '</td>' +
+        '<td>' + actionBtn + '</td>' +
+      '</tr>';
+    }).join('');
+
+    Array.from(document.querySelectorAll('.admin-toggle-btn')).forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const email = String(btn.getAttribute('data-email') || '').trim();
+        const nextAdmin = String(btn.getAttribute('data-next') || '') === '1';
+        await setAdminAccess(email, nextAdmin);
+      });
+    });
+
+    const adminCount = users.filter((u) => !!u.isAdmin).length;
+    if (status) status.textContent = 'Loaded ' + users.length + ' users. Admin-enabled: ' + adminCount + '.';
+  } catch (err) {
+    tbody.innerHTML = '<tr><td colspan="5">' + escapeHtml(err.message) + '</td></tr>';
+    if (status) status.textContent = 'Admin user load failed: ' + err.message;
+  }
+}
+
+async function setAdminAccess(email, isAdmin) {
+  const status = document.getElementById('adminStatus');
+  try {
+    const response = await authFetch('/api/admin/set-admin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, isAdmin: !!isAdmin })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Failed to update admin access');
+    if (status) status.textContent = (isAdmin ? 'Granted admin access for ' : 'Revoked admin access for ') + email + '.';
+    await loadAdminUsers();
+  } catch (err) {
+    if (status) status.textContent = 'Admin access update failed: ' + err.message;
   }
 }
 

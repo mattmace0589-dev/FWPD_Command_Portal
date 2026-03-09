@@ -6,6 +6,7 @@ const crypto = require('crypto');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const BOOTED_AT = new Date().toISOString();
 
 app.use(cors());
 app.use(express.json());
@@ -22,13 +23,17 @@ const SESSIONS_FILE = path.join(DATA_DIR, 'sessions.json');
 const REPORT_APPROVALS_FILE = path.join(DATA_DIR, 'report_approvals.json');
 const REPORTS_CONFIG_FILE = path.join(DATA_DIR, 'reports-config.json');
 const INTERNAL_MESSAGES_FILE = path.join(DATA_DIR, 'internal_mailbox.json');
+const ROLE_OVERRIDES_FILE = path.join(DATA_DIR, 'role_overrides.json');
+const FTO_FILE = path.join(DATA_DIR, 'fto.json');
 const INTERNAL_DATA_FILES = new Set([
   'sheets-config.json',
   'reports-config.json',
   'users.json',
   'sessions.json',
   'report_approvals.json',
-  'internal_mailbox.json'
+  'internal_mailbox.json',
+  'role_overrides.json',
+  'fto.json'
 ]);
 
 function parseCSV(text) {
@@ -460,12 +465,61 @@ function formatUserDisplayName(user) {
 function isPrivilegedRole(roleText) {
   const role = String(roleText || '').trim().toLowerCase();
   if (!role) return false;
-  if (role === 'command') return true;
   if (role.includes('admin')) return true;
   if (role.includes('chief')) return true;
   if (role.includes('commander')) return true;
   if (role.includes('supervisor')) return true;
   return false;
+}
+
+function canPromoteRole(roleText) {
+  const role = String(roleText || '').trim().toLowerCase();
+  if (!role) return false;
+  if (role.includes('admin')) return true;
+  if (role.includes('chief')) return true;
+  if (role.includes('commander')) return true;
+  return false;
+}
+
+function normalizeAccessRole(roleText) {
+  const role = String(roleText || '').trim().toLowerCase();
+  if (role === 'admin') return 'admin';
+  if (role === 'chief') return 'chief';
+  if (role === 'commander') return 'commander';
+  if (role === 'command') return 'command';
+  return '';
+}
+
+function loadRoleOverrides() {
+  const raw = loadJsonFile(ROLE_OVERRIDES_FILE, {});
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const out = {};
+  Object.keys(raw).forEach((k) => {
+    const email = normalizeEmail(k);
+    const role = String(raw[k] || '').trim().toLowerCase();
+    if (!email || !role) return;
+    out[email] = role;
+  });
+  return out;
+}
+
+function saveRoleOverrides(overrides) {
+  const safe = {};
+  Object.keys(overrides || {}).forEach((k) => {
+    const email = normalizeEmail(k);
+    const role = String(overrides[k] || '').trim().toLowerCase();
+    if (!email || !role) return;
+    safe[email] = role;
+  });
+  saveJsonFile(ROLE_OVERRIDES_FILE, safe);
+  return safe;
+}
+
+function getEffectiveRole(email, baseRole) {
+  const normalizedEmail = normalizeEmail(email);
+  const overrides = loadRoleOverrides();
+  if (normalizedEmail && overrides[normalizedEmail]) return overrides[normalizedEmail];
+  return String(baseRole || 'command').trim().toLowerCase() || 'command';
 }
 
 function hashPassword(password) {
@@ -628,7 +682,8 @@ function getAuthFromRequest(req) {
     email: normalizeEmail(user.email),
     characterName: commandProfile.characterName,
     rank: commandProfile.rank,
-    role: commandProfile.role
+    role: getEffectiveRole(user.email, commandProfile.role),
+    baseRole: String(commandProfile.role || 'command').trim().toLowerCase() || 'command'
   };
 }
 
@@ -684,6 +739,16 @@ function getRosterRecordId(record) {
     if (text) return text;
   }
   return '';
+}
+
+function loadFtoRecords() {
+  return loadJsonFile(FTO_FILE, []);
+}
+
+function saveFtoRecords(records) {
+  const safe = Array.isArray(records) ? records : [];
+  saveJsonFile(FTO_FILE, safe);
+  return safe;
 }
 
 function loadSheetsConfig() {
@@ -962,6 +1027,22 @@ app.post('/api/auth/create-account', async (req, res) => {
   }
 });
 
+app.post('/api/auth/ensure-command-users', async (req, res) => {
+  try {
+    const beforeCount = getCommandUsersRecords().length;
+    const records = await ensureCommandUsersLoaded();
+    const afterCount = Array.isArray(records) ? records.length : 0;
+    return res.json({
+      ok: afterCount > 0,
+      beforeCount,
+      afterCount,
+      message: afterCount > 0 ? 'Command_Users is available.' : 'Command_Users could not be loaded yet.'
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
 app.post('/api/auth/login', async (req, res) => {
   try {
     const email = normalizeEmail(req.body && req.body.email);
@@ -1113,6 +1194,103 @@ app.post('/api/auth/admin-reset-password', requireAuth, (req, res) => {
   }
 });
 
+app.get('/api/admin/users', requireAuth, (req, res) => {
+  try {
+    if (!isPrivilegedRole(req.auth && req.auth.role)) {
+      return res.status(403).json({ error: 'Admin access required.' });
+    }
+
+    const users = loadJsonFile(USERS_FILE, []);
+    const commandUsers = getCommandUsersRecords();
+    const accountEmails = new Set(users.map((u) => normalizeEmail(u && u.email)).filter(Boolean));
+    const overrides = loadRoleOverrides();
+
+    const mapped = commandUsers.map((row) => {
+      const email = normalizeEmail(pickField(row, [
+        'email', 'email_address', 'mail', 'google_email', 'google email', 'googleemail'
+      ]));
+      if (!email) return null;
+      const characterName = pickField(row, ['character_name', 'name_of_character', 'name of character', 'name_of_charac', 'name of charac', 'rp_name', 'name']);
+      const rank = pickField(row, ['rank', 'officer_rank']);
+      const baseRole = String(pickField(row, ['role', 'access_role', 'permissions']) || 'command').trim().toLowerCase() || 'command';
+      const role = getEffectiveRole(email, baseRole);
+      return {
+        email,
+        displayName: (rank && characterName) ? (rank + ' ' + characterName) : (characterName || email),
+        hasAccount: accountEmails.has(email),
+        baseRole,
+        overrideRole: overrides[email] || '',
+        role,
+        isAdmin: isPrivilegedRole(role)
+      };
+    }).filter(Boolean);
+
+    mapped.sort((a, b) => a.displayName.localeCompare(b.displayName));
+    res.json({ ok: true, users: mapped });
+  } catch (err) {
+    res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+app.post('/api/admin/set-admin', requireAuth, (req, res) => {
+  try {
+    if (!isPrivilegedRole(req.auth && req.auth.role)) {
+      return res.status(403).json({ error: 'Admin access required.' });
+    }
+
+    const email = normalizeEmail(req.body && req.body.email);
+    const isAdmin = !!(req.body && req.body.isAdmin);
+    if (!email) return res.status(400).json({ error: 'Target email is required.' });
+
+    const users = loadJsonFile(USERS_FILE, []);
+    const accountExists = users.some((u) => normalizeEmail(u && u.email) === email);
+    if (!accountExists) {
+      return res.status(404).json({ error: 'Target user account not found. User must create account first.' });
+    }
+
+    const commandProfile = findCommandUserByEmailFromRecords(email, getCommandUsersRecords());
+    if (!commandProfile) {
+      return res.status(404).json({ error: 'Target user is not in Command_Users.' });
+    }
+
+    const overrides = loadRoleOverrides();
+    if (isAdmin) overrides[email] = 'admin';
+    else delete overrides[email];
+    saveRoleOverrides(overrides);
+
+    const role = getEffectiveRole(email, commandProfile.role);
+    res.json({ ok: true, email, role, isAdmin: isPrivilegedRole(role) });
+  } catch (err) {
+    res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+app.post('/api/admin/set-role', requireAuth, (req, res) => {
+  try {
+    if (!canPromoteRole(req.auth && req.auth.role)) {
+      return res.status(403).json({ error: 'Role update requires chief, commander, or admin access.' });
+    }
+
+    const email = normalizeEmail(req.body && req.body.email);
+    const role = normalizeAccessRole(req.body && req.body.role);
+    if (!email) return res.status(400).json({ error: 'Target email is required.' });
+    if (!role) return res.status(400).json({ error: 'Valid role is required (command, commander, chief, admin).' });
+
+    const commandProfile = findCommandUserByEmailFromRecords(email, getCommandUsersRecords());
+    if (!commandProfile) {
+      return res.status(404).json({ error: 'Target user is not in Command_Users.' });
+    }
+
+    const overrides = loadRoleOverrides();
+    overrides[email] = role;
+    saveRoleOverrides(overrides);
+
+    return res.json({ ok: true, email, role, effectiveRole: getEffectiveRole(email, commandProfile.role) });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
 app.get('/api/messages/users', requireAuth, (req, res) => {
   try {
     const users = loadJsonFile(USERS_FILE, []);
@@ -1190,38 +1368,62 @@ app.get('/api/messages/sent', requireAuth, (req, res) => {
 
 app.post('/api/messages/send', requireAuth, (req, res) => {
   try {
-    const toEmail = normalizeEmail(req.body && req.body.toEmail);
+    const rawRecipients = Array.isArray(req.body && req.body.toEmails)
+      ? req.body.toEmails
+      : [req.body && req.body.toEmail];
+    const recipients = Array.from(new Set(rawRecipients.map(normalizeEmail).filter(Boolean)));
     const subject = String(req.body && req.body.subject || '').trim();
     const body = String(req.body && req.body.body || '').trim();
 
-    if (!toEmail) return res.status(400).json({ error: 'Recipient email is required.' });
+    if (!recipients.length) return res.status(400).json({ error: 'At least one recipient email is required.' });
     if (!subject && !body) return res.status(400).json({ error: 'Message subject or body is required.' });
 
     const fromEmail = normalizeEmail(req.auth.email);
-    if (toEmail === fromEmail) return res.status(400).json({ error: 'Cannot send a message to yourself.' });
-
     const directory = getCommandUsersRecords();
-    const recipientProfile = findCommandUserByEmailFromRecords(toEmail, directory);
-    if (!recipientProfile) return res.status(404).json({ error: 'Recipient is not in Command_Users.' });
-
     const senderProfile = findCommandUserByEmailFromRecords(fromEmail, directory) || req.auth;
     const createdAt = new Date().toISOString();
-    const message = {
-      id: 'msg_' + Date.now() + '_' + crypto.randomBytes(5).toString('hex'),
-      fromEmail,
-      fromName: formatUserDisplayName(senderProfile),
-      toEmail,
-      toName: formatUserDisplayName(recipientProfile),
-      subject: subject || '(No Subject)',
-      body,
-      createdAt,
-      readAt: ''
-    };
+    const createdItems = [];
+    const invalidRecipients = [];
+
+    recipients.forEach((toEmail) => {
+      if (toEmail === fromEmail) {
+        invalidRecipients.push({ email: toEmail, reason: 'Cannot send to yourself.' });
+        return;
+      }
+      const recipientProfile = findCommandUserByEmailFromRecords(toEmail, directory);
+      if (!recipientProfile) {
+        invalidRecipients.push({ email: toEmail, reason: 'Not in Command_Users.' });
+        return;
+      }
+      createdItems.push({
+        id: 'msg_' + Date.now() + '_' + crypto.randomBytes(5).toString('hex'),
+        fromEmail,
+        fromName: formatUserDisplayName(senderProfile),
+        toEmail,
+        toName: formatUserDisplayName(recipientProfile),
+        subject: subject || '(No Subject)',
+        body,
+        createdAt,
+        readAt: ''
+      });
+    });
+
+    if (!createdItems.length) {
+      return res.status(400).json({
+        error: 'No valid recipients found.',
+        invalidRecipients
+      });
+    }
 
     const all = loadInternalMessages();
-    all.push(message);
+    createdItems.forEach((item) => all.push(item));
     saveInternalMessages(all);
-    res.status(201).json({ ok: true, item: message });
+    res.status(201).json({
+      ok: true,
+      count: createdItems.length,
+      items: createdItems,
+      invalidRecipients
+    });
   } catch (err) {
     res.status(500).json({ error: err.message || String(err) });
   }
@@ -1250,6 +1452,95 @@ app.get('/api/roster', (req,res)=>{
   res.json(data);
 });
 
+app.get('/api/fto', requireAuth, (req, res) => {
+  try {
+    if (!canPromoteRole(req.auth && req.auth.role)) {
+      return res.status(403).json({ error: 'FTO access requires chief, commander, or admin role.' });
+    }
+    const items = loadFtoRecords().sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+    return res.json({ ok: true, items });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+app.post('/api/fto', requireAuth, (req, res) => {
+  try {
+    if (!canPromoteRole(req.auth && req.auth.role)) {
+      return res.status(403).json({ error: 'FTO updates require chief, commander, or admin role.' });
+    }
+
+    const officerId = String(req.body && req.body.officerId || '').trim();
+    if (!officerId) return res.status(400).json({ error: 'Officer ID is required.' });
+
+    const roster = loadJson();
+    const officer = roster.find((x) => getRosterRecordId(x) === officerId);
+    if (!officer) return res.status(404).json({ error: 'Officer not found in roster.' });
+
+    const list = loadFtoRecords();
+    if (list.some((x) => String(x && x.officerId || '').trim() === officerId)) {
+      return res.status(409).json({ error: 'Officer is already in FTO list.' });
+    }
+
+    const item = {
+      officerId,
+      name: String(officer.Name || officer.name || '').trim(),
+      callsign: String(officer.Callsign || officer.callsign || '').trim(),
+      rank: String(officer.Rank || officer.rank || '').trim(),
+      division: String(officer.Division || officer.division || '').trim(),
+      addedAt: new Date().toISOString(),
+      addedBy: formatUserDisplayName(req.auth),
+      addedByEmail: normalizeEmail(req.auth.email)
+    };
+    list.push(item);
+    saveFtoRecords(list);
+
+    // Mirror FTO status onto roster so officer profile can display a badge.
+    const rosterIdx = roster.findIndex((x) => getRosterRecordId(x) === officerId);
+    if (rosterIdx >= 0) {
+      roster[rosterIdx].IsFTO = 'Yes';
+      roster[rosterIdx].FTOAddedAt = item.addedAt;
+      roster[rosterIdx].FTOAddedBy = item.addedBy;
+      saveJson(roster);
+    }
+
+    return res.status(201).json({ ok: true, item, message: 'Officer added to FTO list.' });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+app.delete('/api/fto/:officerId', requireAuth, (req, res) => {
+  try {
+    if (!canPromoteRole(req.auth && req.auth.role)) {
+      return res.status(403).json({ error: 'FTO updates require chief, commander, or admin role.' });
+    }
+
+    const officerId = String(req.params.officerId || '').trim();
+    if (!officerId) return res.status(400).json({ error: 'Officer ID is required.' });
+
+    const list = loadFtoRecords();
+    const before = list.length;
+    const after = list.filter((x) => String(x && x.officerId || '').trim() !== officerId);
+    if (after.length === before) return res.status(404).json({ error: 'Officer is not in FTO list.' });
+    saveFtoRecords(after);
+
+    // Clear mirrored roster badge fields on remove.
+    const roster = loadJson();
+    const rosterIdx = roster.findIndex((x) => getRosterRecordId(x) === officerId);
+    if (rosterIdx >= 0) {
+      roster[rosterIdx].IsFTO = '';
+      roster[rosterIdx].FTOAddedAt = '';
+      roster[rosterIdx].FTOAddedBy = '';
+      saveJson(roster);
+    }
+
+    return res.json({ ok: true, deleted: before - after.length, message: 'Officer removed from FTO list.' });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
 // API: add roster item
 app.post('/api/roster', requireAuth, (req,res)=>{
   const data = loadJson();
@@ -1271,6 +1562,54 @@ app.put('/api/roster/:id', requireAuth, (req,res)=>{
   if (!getRosterRecordId(data[idx])) data[idx].ID = String(id);
   saveJson(data);
   res.json(data[idx]);
+});
+
+// API: promotion update by ID (chief/commander/admin only)
+app.post('/api/roster/:id/promote', requireAuth, (req, res) => {
+  try {
+    if (!canPromoteRole(req.auth && req.auth.role)) {
+      return res.status(403).json({ error: 'Promotion access requires chief, commander, or admin role.' });
+    }
+
+    const id = String(req.params.id || '').trim();
+    const rank = String(req.body && req.body.rank || '').trim();
+    const division = String(req.body && req.body.division || '').trim();
+    const reason = String(req.body && req.body.reason || '').trim();
+
+    if (!id) return res.status(400).json({ error: 'Officer ID is required.' });
+    if (!rank && !division) return res.status(400).json({ error: 'Provide rank and/or division to update.' });
+
+    const data = loadJson();
+    const idx = data.findIndex(x => getRosterRecordId(x) === id);
+    if (idx === -1) return res.status(404).json({ error: 'Officer not found.' });
+
+    const beforeRank = String(data[idx].Rank || data[idx].rank || '').trim();
+    const beforeDivision = String(data[idx].Division || data[idx].division || '').trim();
+    if (rank) data[idx].Rank = rank;
+    if (division) data[idx].Division = division;
+
+    const now = new Date().toISOString();
+    data[idx].LastPromotedAt = now;
+    data[idx].LastPromotedBy = formatUserDisplayName(req.auth);
+    data[idx].LastPromotedByEmail = normalizeEmail(req.auth.email);
+    data[idx].LastPromotionReason = reason;
+
+    const history = Array.isArray(data[idx].PromotionHistory) ? data[idx].PromotionHistory : [];
+    history.push({
+      at: now,
+      by: formatUserDisplayName(req.auth),
+      byEmail: normalizeEmail(req.auth.email),
+      from: { rank: beforeRank, division: beforeDivision },
+      to: { rank: String(data[idx].Rank || '').trim(), division: String(data[idx].Division || '').trim() },
+      reason
+    });
+    data[idx].PromotionHistory = history.slice(-50);
+
+    saveJson(data);
+    return res.json({ ok: true, item: data[idx], message: 'Promotion updated successfully.' });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || String(err) });
+  }
 });
 
 // API: delete by ID
@@ -1556,6 +1895,16 @@ app.post('/api/reports/:id/approval', requireAuth, (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message || String(err) });
   }
+});
+
+app.get('/api/health', (req, res) => {
+  res.json({
+    ok: true,
+    service: 'FWPD Command Portal',
+    time: new Date().toISOString(),
+    bootedAt: BOOTED_AT,
+    uptimeSeconds: Math.floor(process.uptime())
+  });
 });
 
 app.listen(PORT, ()=>{
