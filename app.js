@@ -8,7 +8,7 @@ const EVALUATION_SOURCE_URL_KEY = 'fwpd_evaluation_source_url';
 const AUTO_COMMAND_USERS_LINK_KEY = 'fwpd_command_users_auto_linked';
 const DEFAULT_ROSTER_SOURCE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR6_40O35zd-9GMo_nTg5KS76Svzt1P8ZKrfBQwPAtLloGFtpE1r4JBP3t-F-meLlDKCpvWzZkhMlOb/pub?output=csv&gid=757275616';
 const DEFAULT_EVALUATION_SOURCE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR6_40O35zd-9GMo_nTg5KS76Svzt1P8ZKrfBQwPAtLloGFtpE1r4JBP3t-F-meLlDKCpvWzZkhMlOb/pub?output=csv&gid=1513386776';
-const APP_BUILD = '20260309z18';
+const APP_BUILD = '20260309z19';
 const MESSAGE_POLL_MS = 45000;
 
 let currentUser = null;
@@ -238,10 +238,9 @@ function renderLoginScreen(statusText = '') {
 
       <div style="border:1px solid rgba(255,255,255,.2);padding:10px;margin-bottom:12px;">
         <b>Command_Users Access</b><br>
-        <span style="font-size:13px;opacity:.9">Command_Users sync is managed automatically. If your email is missing, use manual link below or contact an admin.</span>
+        <span style="font-size:13px;opacity:.9">Command_Users sync is managed automatically. If your email is missing, run secure sync below or contact an admin.</span>
         <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-          <input id="commandUsersUrl" type="text" style="min-width:260px;flex:1" placeholder="Paste Command_Users tab CSV/Google link">
-          <button id="linkCommandUsersBtn">Link Command_Users</button>
+          <button id="syncCommandUsersBtn">Sync Command_Users</button>
         </div>
       </div>
 
@@ -281,9 +280,24 @@ function renderLoginScreen(statusText = '') {
   });
   document.getElementById('createAccountBtn').addEventListener('click', createAccount);
   document.getElementById('loginBtn').addEventListener('click', loginAccount);
-  const linkBtn = document.getElementById('linkCommandUsersBtn');
-  if (linkBtn) linkBtn.addEventListener('click', linkCommandUsersTab);
+  const syncBtn = document.getElementById('syncCommandUsersBtn');
+  if (syncBtn) syncBtn.addEventListener('click', runSecureCommandUsersSync);
   autoLinkCommandUsersOnLogin();
+}
+
+async function runSecureCommandUsersSync() {
+  const status = document.getElementById('accountStatus');
+  try {
+    const response = await fetch('/api/auth/ensure-command-users', { method: 'POST' });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || 'Sync failed');
+    const rows = Number(data.afterCount || 0);
+    if (status) status.textContent = rows > 0
+      ? ('Command_Users sync complete (' + rows + ' rows). You can create account now.')
+      : 'Command_Users sync ran, but returned 0 rows. Contact admin to verify source tab.';
+  } catch (err) {
+    if (status) status.textContent = 'Command_Users sync failed: ' + err.message;
+  }
 }
 
 async function linkCommandUsersTabByUrl(url) {
