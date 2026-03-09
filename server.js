@@ -1272,12 +1272,6 @@ app.post('/api/admin/set-admin', requireAuth, (req, res) => {
     const isAdmin = !!(req.body && req.body.isAdmin);
     if (!email) return res.status(400).json({ error: 'Target email is required.' });
 
-    const users = loadJsonFile(USERS_FILE, []);
-    const accountExists = users.some((u) => normalizeEmail(u && u.email) === email);
-    if (!accountExists) {
-      return res.status(404).json({ error: 'Target user account not found. User must create account first.' });
-    }
-
     const commandProfile = findCommandUserByEmailFromRecords(email, getCommandUsersRecords());
     if (!commandProfile) {
       return res.status(404).json({ error: 'Target user is not in Command_Users.' });

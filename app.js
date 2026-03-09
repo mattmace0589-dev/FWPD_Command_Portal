@@ -9,7 +9,7 @@ const AUTO_COMMAND_USERS_LINK_KEY = 'fwpd_command_users_auto_linked';
 const DEFAULT_ROSTER_SOURCE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR6_40O35zd-9GMo_nTg5KS76Svzt1P8ZKrfBQwPAtLloGFtpE1r4JBP3t-F-meLlDKCpvWzZkhMlOb/pub?output=csv&gid=757275616';
 const DEFAULT_EVALUATION_SOURCE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR6_40O35zd-9GMo_nTg5KS76Svzt1P8ZKrfBQwPAtLloGFtpE1r4JBP3t-F-meLlDKCpvWzZkhMlOb/pub?output=csv&gid=1513386776';
 const PORTAL_OWNER_EMAILS = ['mattprz89@gmail.com'];
-const APP_BUILD = '20260309z23';
+const APP_BUILD = '20260309z24';
 const MESSAGE_POLL_MS = 45000;
 
 let currentUser = null;
@@ -2149,9 +2149,7 @@ async function loadAdminUsers() {
       const role = escapeHtml(u.role || '-');
       const hasAccount = !!u.hasAccount;
       const isAdmin = !!u.isAdmin;
-      const actionBtn = hasAccount
-        ? '<button class="admin-toggle-btn" data-email="' + email + '" data-next="' + (isAdmin ? '0' : '1') + '">' + (isAdmin ? 'Revoke Admin' : 'Grant Admin') + '</button>'
-        : '-';
+      const actionBtn = '<button class="admin-toggle-btn" data-email="' + email + '" data-next="' + (isAdmin ? '0' : '1') + '">' + (isAdmin ? 'Revoke Admin' : 'Grant Admin') + '</button>';
 
       return '<tr>' +
         '<td>' + name + '</td>' +
