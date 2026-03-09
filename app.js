@@ -8,7 +8,8 @@ const EVALUATION_SOURCE_URL_KEY = 'fwpd_evaluation_source_url';
 const AUTO_COMMAND_USERS_LINK_KEY = 'fwpd_command_users_auto_linked';
 const DEFAULT_ROSTER_SOURCE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR6_40O35zd-9GMo_nTg5KS76Svzt1P8ZKrfBQwPAtLloGFtpE1r4JBP3t-F-meLlDKCpvWzZkhMlOb/pub?output=csv&gid=757275616';
 const DEFAULT_EVALUATION_SOURCE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR6_40O35zd-9GMo_nTg5KS76Svzt1P8ZKrfBQwPAtLloGFtpE1r4JBP3t-F-meLlDKCpvWzZkhMlOb/pub?output=csv&gid=1513386776';
-const APP_BUILD = '20260309z22';
+const PORTAL_OWNER_EMAILS = ['mattprz89@gmail.com'];
+const APP_BUILD = '20260309z23';
 const MESSAGE_POLL_MS = 45000;
 
 let currentUser = null;
@@ -40,6 +41,26 @@ function canPromoteOfficersClient(roleText) {
   if (role.includes('chief')) return true;
   if (role.includes('commander')) return true;
   return false;
+}
+
+function normalizeEmailClient(email) {
+  return String(email || '').trim().toLowerCase();
+}
+
+function isPortalOwnerClient(user) {
+  const email = normalizeEmailClient(user && user.email);
+  if (!email) return false;
+  return PORTAL_OWNER_EMAILS.includes(email);
+}
+
+function hasLeadershipAccessClient(user) {
+  const role = String((user && user.role) || '');
+  return canPromoteOfficersClient(role) || isPortalOwnerClient(user);
+}
+
+function hasAdminAccessClient(user) {
+  const role = String((user && user.role) || '');
+  return isPrivilegedRoleClient(role) || isPortalOwnerClient(user);
 }
 
 function normalizeAccessRoleClient(roleText) {
@@ -141,8 +162,8 @@ function applyRuntimeLayoutFixes() {
       else sidebar.appendChild(messagesLink);
     }
 
-    const showAdmin = !!currentUser && isPrivilegedRoleClient((currentUser && currentUser.role) || '');
-    const showFto = !!currentUser && canPromoteOfficersClient((currentUser && currentUser.role) || '');
+    const showAdmin = !!currentUser && hasAdminAccessClient(currentUser);
+    const showFto = !!currentUser && hasLeadershipAccessClient(currentUser);
     if (showAdmin && !adminLink) {
       adminLink = document.createElement('a');
       adminLink.setAttribute('href', "javascript:loadPage('admin')");
@@ -649,7 +670,7 @@ loadInboxMessages();
 
 if(page === "fto"){
 
-if(!canPromoteOfficersClient((currentUser && currentUser.role) || '')){
+if(!hasLeadershipAccessClient(currentUser)){
 loadPage('dashboard');
 return;
 }
@@ -702,7 +723,7 @@ loadFtoPage();
 
 if(page === "admin"){
 
-if(!isPrivilegedRoleClient((currentUser && currentUser.role) || '')){
+if(!hasAdminAccessClient(currentUser)){
 loadPage('dashboard');
 return;
 }
@@ -744,7 +765,7 @@ loadAdminUsers();
 
 if(page === "account"){
 
-const canAdminReset = isPrivilegedRoleClient((currentUser && currentUser.role) || '');
+const canAdminReset = hasAdminAccessClient(currentUser);
 
 document.getElementById("content").innerHTML = `
 <h2>My Account</h2>
@@ -1067,7 +1088,7 @@ function renderOfficerProfile(officer) {
   const profileFto = pickOfficerField(officer, ['IsFTO', 'is_fto', 'FTO', 'fto']);
   const isFtoActive = ['yes', 'true', '1', 'fto', 'active'].includes(String(profileFto || '').trim().toLowerCase());
   const profileNotes = pickOfficerField(officer, ['Notes', 'notes', 'Officer_Notes', 'officer_notes', 'Comments', 'comments']);
-  const canPromote = !!currentUser && canPromoteOfficersClient((currentUser && currentUser.role) || '');
+  const canPromote = !!currentUser && hasLeadershipAccessClient(currentUser);
   const promotionEditor = (canPromote && profileId)
     ? `
     <div style="margin-top:12px;border:1px solid rgba(255,255,255,.2);padding:10px;background:rgba(0,0,0,.15)">
@@ -1231,7 +1252,7 @@ function showOfficerForm(id = null, data = {}) {
   const activityStatusValue = pickOfficerField(data, ['Activity_Status', 'activity_status', 'ActivityStatus', 'activitystatus', 'Activity Status', 'activity status']);
   const emailValue = pickOfficerField(data, ['Email', 'email', 'Google_Email', 'google_email', 'Email_Address', 'email_address']);
   const accessRoleValue = normalizeAccessRoleClient(pickOfficerField(data, ['Access_Role', 'access_role', 'Role', 'role', 'RoleOverride', 'roleOverride']));
-  const canManageAccess = !!currentUser && canPromoteOfficersClient((currentUser && currentUser.role) || '');
+  const canManageAccess = !!currentUser && hasLeadershipAccessClient(currentUser);
 
   const formHtml = `
     <div id="officerForm" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:white;color:#111;padding:20px;border:1px solid #ccc;z-index:1000;box-shadow:0 0 10px rgba(0,0,0,0.3);min-width:260px;">
@@ -1297,7 +1318,7 @@ async function saveOfficer(id) {
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || 'Save failed');
 
-    const canManageAccess = !!currentUser && canPromoteOfficersClient((currentUser && currentUser.role) || '');
+    const canManageAccess = !!currentUser && hasLeadershipAccessClient(currentUser);
     if (canManageAccess) {
       const targetEmail = String(data.Email || '').trim();
       const accessRoleEl = document.getElementById('formAccessRole');
@@ -2351,10 +2372,25 @@ async function autoSyncOnLoad() {
 
     let tabsToSync = Array.isArray(config.tabs) ? config.tabs : [];
     let autoEnabled = !!config.autoSyncOnLoad;
+    const defaultRosterUrl = String(DEFAULT_ROSTER_SOURCE_URL || '').trim();
+
+    // Always include the hard-set roster tab so users do not need to enter URL.
+    if (defaultRosterUrl) {
+      const hasRoster = tabsToSync.some((t) => String((t && t.name) || '').trim().toLowerCase() === 'roster');
+      if (!hasRoster) {
+        tabsToSync = tabsToSync.concat([{ name: 'roster', url: defaultRosterUrl }]);
+        autoEnabled = true;
+        setLocalSyncTabs(tabsToSync);
+        await fetch('/api/sheets/config', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tabs: tabsToSync, autoSyncOnLoad: true })
+        });
+      }
+    }
 
     // Render free deployments can reset local files; restore from browser cache when available.
     if (!tabsToSync.length) {
-      const defaultRosterUrl = String(DEFAULT_ROSTER_SOURCE_URL || '').trim();
       if (defaultRosterUrl) {
         tabsToSync = [{ name: 'roster', url: defaultRosterUrl }];
         autoEnabled = true;

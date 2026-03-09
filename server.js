@@ -25,6 +25,11 @@ const REPORTS_CONFIG_FILE = path.join(DATA_DIR, 'reports-config.json');
 const INTERNAL_MESSAGES_FILE = path.join(DATA_DIR, 'internal_mailbox.json');
 const ROLE_OVERRIDES_FILE = path.join(DATA_DIR, 'role_overrides.json');
 const FTO_FILE = path.join(DATA_DIR, 'fto.json');
+const HARDSET_DEFAULT_ROSTER_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR6_40O35zd-9GMo_nTg5KS76Svzt1P8ZKrfBQwPAtLloGFtpE1r4JBP3t-F-meLlDKCpvWzZkhMlOb/pub?output=csv&gid=757275616';
+const PORTAL_OWNER_EMAILS = String(process.env.PORTAL_OWNER_EMAILS || 'mattprz89@gmail.com')
+  .split(',')
+  .map((s) => String(s || '').trim().toLowerCase())
+  .filter(Boolean);
 const INTERNAL_DATA_FILES = new Set([
   'sheets-config.json',
   'reports-config.json',
@@ -481,6 +486,29 @@ function canPromoteRole(roleText) {
   return false;
 }
 
+function isPortalOwnerAuth(auth) {
+  const email = normalizeEmail(auth && auth.email);
+  return !!email && PORTAL_OWNER_EMAILS.includes(email);
+}
+
+function hasLeadershipAccess(auth) {
+  const role = String((auth && auth.role) || '');
+  return canPromoteRole(role) || isPortalOwnerAuth(auth);
+}
+
+function hasAdminAccess(auth) {
+  const role = String((auth && auth.role) || '');
+  return isPrivilegedRole(role) || isPortalOwnerAuth(auth);
+}
+
+function ensureHardsetRosterTab(tabs) {
+  const out = Array.isArray(tabs) ? tabs.slice() : [];
+  const rosterUrl = String(process.env.DEFAULT_ROSTER_URL || '').trim() || HARDSET_DEFAULT_ROSTER_URL;
+  const hasRoster = out.some((t) => sanitizeName(t && t.name) === 'roster');
+  if (!hasRoster && rosterUrl) out.unshift({ name: 'roster', url: rosterUrl });
+  return out;
+}
+
 function normalizeAccessRole(roleText) {
   const role = String(roleText || '').trim().toLowerCase();
   if (role === 'admin') return 'admin';
@@ -756,19 +784,21 @@ function loadSheetsConfig() {
 
   ensureDataDir();
   if (!fs.existsSync(SHEETS_CONFIG_FILE)) {
-    return { tabs: envTabs, autoSyncOnLoad: envTabs.length > 0, lastSync: null };
+    const tabs = ensureHardsetRosterTab(envTabs);
+    return { tabs, autoSyncOnLoad: tabs.length > 0, lastSync: null };
   }
   try {
     const parsed = JSON.parse(fs.readFileSync(SHEETS_CONFIG_FILE, 'utf8') || '{}');
     const fileTabs = Array.isArray(parsed.tabs) ? parsed.tabs : [];
-    const tabs = fileTabs.length ? fileTabs : envTabs;
+    const tabs = ensureHardsetRosterTab(fileTabs.length ? fileTabs : envTabs);
     return {
       tabs,
       autoSyncOnLoad: typeof parsed.autoSyncOnLoad === 'boolean' ? parsed.autoSyncOnLoad : tabs.length > 0,
       lastSync: parsed.lastSync || null
     };
   } catch (e) {
-    return { tabs: envTabs, autoSyncOnLoad: envTabs.length > 0, lastSync: null };
+    const tabs = ensureHardsetRosterTab(envTabs);
+    return { tabs, autoSyncOnLoad: tabs.length > 0, lastSync: null };
   }
 }
 
@@ -818,7 +848,7 @@ function saveSheetsConfig(config) {
     : [];
 
   const payload = {
-    tabs: safeTabs,
+    tabs: ensureHardsetRosterTab(safeTabs),
     autoSyncOnLoad: !!(config && config.autoSyncOnLoad),
     lastSync: (config && config.lastSync) || null
   };
@@ -1164,7 +1194,7 @@ app.post('/api/auth/change-password', requireAuth, (req, res) => {
 
 app.post('/api/auth/admin-reset-password', requireAuth, (req, res) => {
   try {
-    if (!isPrivilegedRole(req.auth && req.auth.role)) {
+    if (!hasAdminAccess(req.auth)) {
       return res.status(403).json({ error: 'Admin reset requires elevated role.' });
     }
 
@@ -1196,7 +1226,7 @@ app.post('/api/auth/admin-reset-password', requireAuth, (req, res) => {
 
 app.get('/api/admin/users', requireAuth, (req, res) => {
   try {
-    if (!isPrivilegedRole(req.auth && req.auth.role)) {
+    if (!hasAdminAccess(req.auth)) {
       return res.status(403).json({ error: 'Admin access required.' });
     }
 
@@ -1234,7 +1264,7 @@ app.get('/api/admin/users', requireAuth, (req, res) => {
 
 app.post('/api/admin/set-admin', requireAuth, (req, res) => {
   try {
-    if (!isPrivilegedRole(req.auth && req.auth.role)) {
+    if (!hasAdminAccess(req.auth)) {
       return res.status(403).json({ error: 'Admin access required.' });
     }
 
@@ -1267,7 +1297,7 @@ app.post('/api/admin/set-admin', requireAuth, (req, res) => {
 
 app.post('/api/admin/set-role', requireAuth, (req, res) => {
   try {
-    if (!canPromoteRole(req.auth && req.auth.role)) {
+    if (!hasLeadershipAccess(req.auth)) {
       return res.status(403).json({ error: 'Role update requires chief, commander, or admin access.' });
     }
 
@@ -1454,7 +1484,7 @@ app.get('/api/roster', (req,res)=>{
 
 app.get('/api/fto', requireAuth, (req, res) => {
   try {
-    if (!canPromoteRole(req.auth && req.auth.role)) {
+    if (!hasLeadershipAccess(req.auth)) {
       return res.status(403).json({ error: 'FTO access requires chief, commander, or admin role.' });
     }
     const items = loadFtoRecords().sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
@@ -1466,7 +1496,7 @@ app.get('/api/fto', requireAuth, (req, res) => {
 
 app.post('/api/fto', requireAuth, (req, res) => {
   try {
-    if (!canPromoteRole(req.auth && req.auth.role)) {
+    if (!hasLeadershipAccess(req.auth)) {
       return res.status(403).json({ error: 'FTO updates require chief, commander, or admin role.' });
     }
 
@@ -1512,7 +1542,7 @@ app.post('/api/fto', requireAuth, (req, res) => {
 
 app.delete('/api/fto/:officerId', requireAuth, (req, res) => {
   try {
-    if (!canPromoteRole(req.auth && req.auth.role)) {
+    if (!hasLeadershipAccess(req.auth)) {
       return res.status(403).json({ error: 'FTO updates require chief, commander, or admin role.' });
     }
 
@@ -1567,7 +1597,7 @@ app.put('/api/roster/:id', requireAuth, (req,res)=>{
 // API: promotion update by ID (chief/commander/admin only)
 app.post('/api/roster/:id/promote', requireAuth, (req, res) => {
   try {
-    if (!canPromoteRole(req.auth && req.auth.role)) {
+    if (!hasLeadershipAccess(req.auth)) {
       return res.status(403).json({ error: 'Promotion access requires chief, commander, or admin role.' });
     }
 
