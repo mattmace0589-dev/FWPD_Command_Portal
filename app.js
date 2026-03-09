@@ -3,13 +3,16 @@
 const AUTO_SYNC_SESSION_KEY = 'fwpd_auto_sync_done';
 const LOCAL_SYNC_TABS_KEY = 'fwpd_sync_tabs_v1';
 const AUTH_TOKEN_KEY = 'fwpd_auth_token';
+const COMMAND_USERS_SOURCE_URL_KEY = 'fwpd_command_users_source_url';
 const DISCIPLINE_SOURCE_URL_KEY = 'fwpd_discipline_source_url';
 const EVALUATION_SOURCE_URL_KEY = 'fwpd_evaluation_source_url';
 const AUTO_COMMAND_USERS_LINK_KEY = 'fwpd_command_users_auto_linked';
-const DEFAULT_ROSTER_SOURCE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR6_40O35zd-9GMo_nTg5KS76Svzt1P8ZKrfBQwPAtLloGFtpE1r4JBP3t-F-meLlDKCpvWzZkhMlOb/pub?output=csv&gid=757275616';
+const DEFAULT_COMMAND_USERS_SOURCE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR6_40O35zd-9GMo_nTg5KS76Svzt1P8ZKrfBQwPAtLloGFtpE1r4JBP3t-F-meLlDKCpvWzZkhMlOb/pubhtml?gid=1476592599&single=true';
+const DEFAULT_ROSTER_SOURCE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR6_40O35zd-9GMo_nTg5KS76Svzt1P8ZKrfBQwPAtLloGFtpE1r4JBP3t-F-meLlDKCpvWzZkhMlOb/pubhtml?gid=757275616&single=true';
+const DEFAULT_DISCIPLINE_SOURCE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vS4seHseWTG0lk0IBKCetQqz2elv2_QRVtFRaCbJIMbONhvsixRjc7VrERdyaW2tqUv6ZUfIA-4EztK/pubhtml?gid=10995956&single=true';
 const DEFAULT_EVALUATION_SOURCE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR6_40O35zd-9GMo_nTg5KS76Svzt1P8ZKrfBQwPAtLloGFtpE1r4JBP3t-F-meLlDKCpvWzZkhMlOb/pub?output=csv&gid=1513386776';
 const PORTAL_OWNER_EMAILS = ['mattprz89@gmail.com'];
-const APP_BUILD = '20260309z24';
+const APP_BUILD = '20260309z28';
 const MESSAGE_POLL_MS = 45000;
 
 let currentUser = null;
@@ -304,6 +307,11 @@ function renderLoginScreen(statusText = '') {
   document.getElementById('loginBtn').addEventListener('click', loginAccount);
   const linkBtn = document.getElementById('linkCommandUsersBtn');
   if (linkBtn) linkBtn.addEventListener('click', linkCommandUsersTab);
+  const commandUsersUrlEl = document.getElementById('commandUsersUrl');
+  if (commandUsersUrlEl) {
+    const savedCommandUsersUrl = localStorage.getItem(COMMAND_USERS_SOURCE_URL_KEY) || DEFAULT_COMMAND_USERS_SOURCE_URL;
+    if (savedCommandUsersUrl) commandUsersUrlEl.value = savedCommandUsersUrl;
+  }
   autoLinkCommandUsersOnLogin();
 }
 
@@ -343,6 +351,7 @@ async function linkCommandUsersTab() {
 
   try {
     const data = await linkCommandUsersTabByUrl(url);
+    try { localStorage.setItem(COMMAND_USERS_SOURCE_URL_KEY, url); } catch (e) {}
 
     const rows = (((data || {}).import || {}).result || []).find(x => x.name === 'command_users');
     const rowCount = rows && typeof rows.rows === 'number' ? rows.rows : 0;
@@ -544,7 +553,7 @@ if (linkBtn) linkBtn.addEventListener('click', linkDisciplinarySource);
 const evalLinkBtn = document.getElementById('linkEvaluationSourceBtn');
 if (evalLinkBtn) evalLinkBtn.addEventListener('click', linkEvaluationSource);
 
-const savedDisciplineUrl = localStorage.getItem(DISCIPLINE_SOURCE_URL_KEY) || '';
+const savedDisciplineUrl = localStorage.getItem(DISCIPLINE_SOURCE_URL_KEY) || DEFAULT_DISCIPLINE_SOURCE_URL;
 const disciplineUrlEl = document.getElementById('disciplineSourceUrl');
 if (disciplineUrlEl && savedDisciplineUrl) disciplineUrlEl.value = savedDisciplineUrl;
 
@@ -2371,6 +2380,33 @@ async function autoSyncOnLoad() {
     let tabsToSync = Array.isArray(config.tabs) ? config.tabs : [];
     let autoEnabled = !!config.autoSyncOnLoad;
     const defaultRosterUrl = String(DEFAULT_ROSTER_SOURCE_URL || '').trim();
+    const defaultDisciplineUrl = String(DEFAULT_DISCIPLINE_SOURCE_URL || '').trim();
+    const defaultEvalUrl = String(DEFAULT_EVALUATION_SOURCE_URL || '').trim();
+    const defaultCommandUsersUrl = String(localStorage.getItem(COMMAND_USERS_SOURCE_URL_KEY) || DEFAULT_COMMAND_USERS_SOURCE_URL || '').trim();
+
+    const upsertTab = (name, url) => {
+      const safeName = String(name || '').trim().toLowerCase();
+      const safeUrl = String(url || '').trim();
+      if (!safeName || !safeUrl) return;
+      const idx = tabsToSync.findIndex((t) => String((t && t.name) || '').trim().toLowerCase() === safeName);
+      if (idx >= 0) tabsToSync[idx] = { name: safeName, url: safeUrl };
+      else tabsToSync.push({ name: safeName, url: safeUrl });
+    };
+
+    upsertTab('roster', defaultRosterUrl);
+    upsertTab('disciplinary_forms', defaultDisciplineUrl);
+    upsertTab('cadet_evaluations', defaultEvalUrl);
+    upsertTab('command_users', defaultCommandUsersUrl);
+
+    if (tabsToSync.length) {
+      autoEnabled = true;
+      setLocalSyncTabs(tabsToSync);
+      await fetch('/api/sheets/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tabs: tabsToSync, autoSyncOnLoad: true })
+      });
+    }
 
     // Always include the hard-set roster tab so users do not need to enter URL.
     if (defaultRosterUrl) {
