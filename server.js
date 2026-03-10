@@ -2400,11 +2400,46 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+async function autoSyncSheetsOnStartup() {
+  const config = loadSheetsConfig();
+  const tabs = Array.isArray(config.tabs) ? config.tabs : [];
+  if (!tabs.length) {
+    console.log('Startup sync skipped (no tabs configured).');
+    return;
+  }
+
+  try {
+    const imported = await importSheetsTabs(tabs);
+    config.lastSync = {
+      at: new Date().toISOString(),
+      ok: imported.ok,
+      summary: imported.summary,
+      result: imported.result
+    };
+    saveSheetsConfig(config);
+
+    const okCount = imported.summary && typeof imported.summary.ok === 'number' ? imported.summary.ok : 0;
+    const failedCount = imported.summary && typeof imported.summary.failed === 'number' ? imported.summary.failed : 0;
+    console.log('Startup sync complete. OK:', okCount, '| Failed:', failedCount);
+  } catch (err) {
+    console.error('Startup sync failed:', err.message || String(err));
+  }
+}
+
 async function startServer() {
   try {
     await initDatabasePersistence();
   } catch (err) {
     console.error('DB initialization failed. Continuing with file-based persistence only.', err.message || String(err));
+  }
+
+  await autoSyncSheetsOnStartup();
+
+  try {
+    const commandUsers = await ensureCommandUsersLoaded();
+    console.log('Command_Users ready:', Array.isArray(commandUsers) ? commandUsers.length : 0, 'records');
+  } catch (err) {
+    console.error('Command_Users warm-load failed:', err.message || String(err));
   }
 
   app.listen(PORT, () => {
