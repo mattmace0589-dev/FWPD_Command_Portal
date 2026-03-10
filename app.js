@@ -12,7 +12,7 @@ const DEFAULT_ROSTER_SOURCE_URL = 'https://docs.google.com/spreadsheets/d/e/2PAC
 const DEFAULT_DISCIPLINE_SOURCE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vS4seHseWTG0lk0IBKCetQqz2elv2_QRVtFRaCbJIMbONhvsixRjc7VrERdyaW2tqUv6ZUfIA-4EztK/pubhtml?gid=10995956&single=true';
 const DEFAULT_EVALUATION_SOURCE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR6_40O35zd-9GMo_nTg5KS76Svzt1P8ZKrfBQwPAtLloGFtpE1r4JBP3t-F-meLlDKCpvWzZkhMlOb/pub?output=csv&gid=1513386776';
 const PORTAL_OWNER_EMAILS = ['mattprz89@gmail.com'];
-const APP_BUILD = '20260309z28';
+const APP_BUILD = '20260309z29';
 const MESSAGE_POLL_MS = 45000;
 
 let currentUser = null;
@@ -262,10 +262,9 @@ function renderLoginScreen(statusText = '') {
 
       <div style="border:1px solid rgba(255,255,255,.2);padding:10px;margin-bottom:12px;">
         <b>Command_Users Access</b><br>
-        <span style="font-size:13px;opacity:.9">If your email is missing, paste the Command_Users tab link and click Link Command_Users.</span>
+        <span style="font-size:13px;opacity:.9">If your email is missing, click Sync Command_Users.</span>
         <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-          <input id="commandUsersUrl" type="text" style="min-width:260px;flex:1" placeholder="Paste Command_Users tab CSV/Google link">
-          <button id="linkCommandUsersBtn">Link Command_Users</button>
+          <button id="syncCommandUsersBtn">Sync Command_Users</button>
         </div>
       </div>
 
@@ -305,14 +304,34 @@ function renderLoginScreen(statusText = '') {
   });
   document.getElementById('createAccountBtn').addEventListener('click', createAccount);
   document.getElementById('loginBtn').addEventListener('click', loginAccount);
-  const linkBtn = document.getElementById('linkCommandUsersBtn');
-  if (linkBtn) linkBtn.addEventListener('click', linkCommandUsersTab);
-  const commandUsersUrlEl = document.getElementById('commandUsersUrl');
-  if (commandUsersUrlEl) {
-    const savedCommandUsersUrl = localStorage.getItem(COMMAND_USERS_SOURCE_URL_KEY) || DEFAULT_COMMAND_USERS_SOURCE_URL;
-    if (savedCommandUsersUrl) commandUsersUrlEl.value = savedCommandUsersUrl;
-  }
+  const syncBtn = document.getElementById('syncCommandUsersBtn');
+  if (syncBtn) syncBtn.addEventListener('click', syncCommandUsersHardset);
   autoLinkCommandUsersOnLogin();
+}
+
+async function syncCommandUsersHardset() {
+  const status = document.getElementById('accountStatus');
+  const saved = String(localStorage.getItem(COMMAND_USERS_SOURCE_URL_KEY) || '').trim();
+  const defaultUrl = String(DEFAULT_COMMAND_USERS_SOURCE_URL || '').trim();
+  const sourceUrl = saved || defaultUrl;
+
+  try {
+    if (sourceUrl) {
+      const data = await linkCommandUsersTabByUrl(sourceUrl);
+      const rows = (((data || {}).import || {}).result || []).find(x => x.name === 'command_users');
+      const rowCount = rows && typeof rows.rows === 'number' ? rows.rows : 0;
+      if (status) status.textContent = 'Command_Users synced (' + rowCount + ' rows). You can create account now.';
+      return;
+    }
+
+    const response = await fetch('/api/auth/ensure-command-users', { method: 'POST' });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || 'Sync failed');
+    const rows = Number(data.afterCount || 0);
+    if (status) status.textContent = 'Command_Users synced (' + rows + ' rows). You can create account now.';
+  } catch (err) {
+    if (status) status.textContent = 'Command_Users sync failed: ' + err.message;
+  }
 }
 
 async function linkCommandUsersTabByUrl(url) {
@@ -1550,7 +1569,7 @@ async function createAccount() {
   } catch (err) {
     const base = String(err && err.message || 'Create account failed');
     const hint = /command_users|email not found/i.test(base)
-      ? ' If your email is valid, paste your Command_Users link and click "Link Command_Users", then retry.'
+      ? ' If your email is valid, click "Sync Command_Users" and retry.'
       : '';
     if (status) status.textContent = 'Create account failed: ' + base + hint;
   }
