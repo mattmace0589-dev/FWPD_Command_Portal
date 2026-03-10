@@ -12,7 +12,7 @@ const DEFAULT_ROSTER_SOURCE_URL = 'https://docs.google.com/spreadsheets/d/e/2PAC
 const DEFAULT_DISCIPLINE_SOURCE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vS4seHseWTG0lk0IBKCetQqz2elv2_QRVtFRaCbJIMbONhvsixRjc7VrERdyaW2tqUv6ZUfIA-4EztK/pubhtml?gid=10995956&single=true';
 const DEFAULT_EVALUATION_SOURCE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR6_40O35zd-9GMo_nTg5KS76Svzt1P8ZKrfBQwPAtLloGFtpE1r4JBP3t-F-meLlDKCpvWzZkhMlOb/pub?output=csv&gid=1513386776';
 const PORTAL_OWNER_EMAILS = ['mattprz89@gmail.com'];
-const APP_BUILD = '20260309z31';
+const APP_BUILD = '20260309z32';
 const MESSAGE_POLL_MS = 45000;
 
 let currentUser = null;
@@ -1127,6 +1127,26 @@ function renderOfficerProfile(officer) {
   const profileFto = pickOfficerField(officer, ['IsFTO', 'is_fto', 'FTO', 'fto']);
   const isFtoActive = ['yes', 'true', '1', 'fto', 'active'].includes(String(profileFto || '').trim().toLowerCase());
   const profileNotes = pickOfficerField(officer, ['Notes', 'notes', 'Officer_Notes', 'officer_notes', 'Comments', 'comments']);
+  const rankOptions = [
+    'Cadet',
+    'Officer',
+    'Senior Officer',
+    'Corporal',
+    'Sergeant',
+    'Lieutenant',
+    'Captain',
+    'Commander',
+    'Chief'
+  ];
+  const currentRank = String(profileRank || '').trim();
+  const rankOptionSet = new Set(rankOptions.map((r) => r.toLowerCase()));
+  if (currentRank && !rankOptionSet.has(currentRank.toLowerCase())) {
+    rankOptions.unshift(currentRank);
+  }
+  const rankOptionsHtml = rankOptions.map((rankLabel) => {
+    const selected = currentRank.toLowerCase() === String(rankLabel || '').toLowerCase() ? ' selected' : '';
+    return '<option value="' + escapeHtml(rankLabel) + '"' + selected + '>' + escapeHtml(rankLabel) + '</option>';
+  }).join('');
   const canPromote = !!currentUser && hasLeadershipAccessClient(currentUser);
   const promotionEditor = (canPromote && profileId)
     ? `
@@ -1134,7 +1154,7 @@ function renderOfficerProfile(officer) {
       <b>Promotion Controls</b><br>
       <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;max-width:820px;">
         <label style="min-width:72px;">Rank</label>
-        <input id="promotionRankInput" type="text" value="${escapeHtml(profileRank || '')}" style="min-width:220px;flex:1;">
+        <select id="promotionRankInput" style="min-width:220px;flex:1;">${rankOptionsHtml}</select>
       </div>
       <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;max-width:820px;">
         <label style="min-width:72px;">Division</label>
