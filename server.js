@@ -37,6 +37,11 @@ const INTERNAL_MESSAGES_FILE = path.join(DATA_DIR, 'internal_mailbox.json');
 const ROLE_OVERRIDES_FILE = path.join(DATA_DIR, 'role_overrides.json');
 const FTO_FILE = path.join(DATA_DIR, 'fto.json');
 const HARDSET_DEFAULT_ROSTER_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR6_40O35zd-9GMo_nTg5KS76Svzt1P8ZKrfBQwPAtLloGFtpE1r4JBP3t-F-meLlDKCpvWzZkhMlOb/pub?output=csv&gid=757275616';
+const DEFAULT_TRAINING_TAB_NAME = sanitizeName(process.env.DEFAULT_TRAINING_TAB_NAME || 'training_records');
+const DEFAULT_DISCIPLINE_TAB_NAME = sanitizeName(process.env.DEFAULT_DISCIPLINE_TAB_NAME || 'discipline_records');
+const DEFAULT_LAUNCH_TAB_NAMES = ['roster', DEFAULT_TRAINING_TAB_NAME, DEFAULT_DISCIPLINE_TAB_NAME]
+  .map(sanitizeName)
+  .filter(Boolean);
 const PORTAL_OWNER_EMAILS = String(process.env.PORTAL_OWNER_EMAILS || 'mattprz89@gmail.com')
   .split(',')
   .map((s) => String(s || '').trim().toLowerCase())
@@ -72,6 +77,28 @@ async function dbQuery(text, params = []) {
   const pool = getDbPool();
   if (!pool) throw new Error('DATABASE_URL is not configured.');
   return pool.query(text, params);
+}
+
+async function dbGetPortalSetting(key) {
+  if (!DB_ENABLED || !String(key || '').trim()) return null;
+  const rows = (await dbQuery('SELECT value_json FROM portal_settings WHERE key = $1 LIMIT 1', [String(key)])).rows;
+  if (!rows.length) return null;
+  try {
+    return JSON.parse(String(rows[0].value_json || 'null'));
+  } catch (e) {
+    return null;
+  }
+}
+
+async function dbUpsertPortalSetting(key, value) {
+  if (!DB_ENABLED || !String(key || '').trim()) return;
+  await dbQuery(
+    `INSERT INTO portal_settings (key, value_json, updated_at)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (key)
+     DO UPDATE SET value_json = EXCLUDED.value_json, updated_at = EXCLUDED.updated_at`,
+    [String(key), JSON.stringify(value || {}), new Date().toISOString()]
+  );
 }
 
 async function initDatabasePersistence() {
@@ -116,6 +143,14 @@ async function initDatabasePersistence() {
       added_at TEXT,
       added_by TEXT,
       added_by_email TEXT
+    )
+  `);
+
+  await dbQuery(`
+    CREATE TABLE IF NOT EXISTS portal_settings (
+      key TEXT PRIMARY KEY,
+      value_json TEXT NOT NULL,
+      updated_at TEXT
     )
   `);
 
@@ -202,6 +237,7 @@ async function initDatabasePersistence() {
   const dbSessions = (await dbQuery('SELECT token, email, created_at FROM sessions')).rows;
   const dbRoleOverrides = (await dbQuery('SELECT email, role FROM role_overrides')).rows;
   const dbFto = (await dbQuery('SELECT officer_id, name, callsign, rank, division, added_at, added_by, added_by_email FROM fto_members')).rows;
+  const dbSheetsSetting = await dbGetPortalSetting('sheets_config');
 
   if (dbUsers.length) {
     const payload = dbUsers.map((r) => ({
@@ -246,6 +282,12 @@ async function initDatabasePersistence() {
       addedByEmail: normalizeEmail(r.added_by_email)
     }));
     saveFtoRecords(payload);
+  }
+
+  if (dbSheetsSetting && typeof dbSheetsSetting === 'object') {
+    saveJsonFile(SHEETS_CONFIG_FILE, normalizeSheetsConfig(dbSheetsSetting));
+  } else {
+    await dbUpsertPortalSetting('sheets_config', loadSheetsConfig());
   }
 
   console.log('DB persistence initialized. Users:', dbUsers.length, '| Sessions:', dbSessions.length, '| Role overrides:', dbRoleOverrides.length, '| FTO:', dbFto.length);
@@ -1140,20 +1182,34 @@ function loadSheetsConfig() {
   ensureDataDir();
   if (!fs.existsSync(SHEETS_CONFIG_FILE)) {
     const tabs = ensureHardsetRosterTab(envTabs);
-    return { tabs, autoSyncOnLoad: tabs.length > 0, lastSync: null };
+    return normalizeSheetsConfig({
+      tabs,
+      autoSyncOnLoad: tabs.length > 0,
+      launchTabsOnLogin: true,
+      launchTabNames: DEFAULT_LAUNCH_TAB_NAMES,
+      lastSync: null
+    });
   }
   try {
     const parsed = JSON.parse(fs.readFileSync(SHEETS_CONFIG_FILE, 'utf8') || '{}');
     const fileTabs = Array.isArray(parsed.tabs) ? parsed.tabs : [];
     const tabs = ensureHardsetRosterTab(fileTabs.length ? fileTabs : envTabs);
-    return {
+    return normalizeSheetsConfig({
       tabs,
       autoSyncOnLoad: typeof parsed.autoSyncOnLoad === 'boolean' ? parsed.autoSyncOnLoad : tabs.length > 0,
+      launchTabsOnLogin: typeof parsed.launchTabsOnLogin === 'boolean' ? parsed.launchTabsOnLogin : true,
+      launchTabNames: parsed.launchTabNames,
       lastSync: parsed.lastSync || null
-    };
+    });
   } catch (e) {
     const tabs = ensureHardsetRosterTab(envTabs);
-    return { tabs, autoSyncOnLoad: tabs.length > 0, lastSync: null };
+    return normalizeSheetsConfig({
+      tabs,
+      autoSyncOnLoad: tabs.length > 0,
+      launchTabsOnLogin: true,
+      launchTabNames: DEFAULT_LAUNCH_TAB_NAMES,
+      lastSync: null
+    });
   }
 }
 
@@ -1167,6 +1223,16 @@ function getDefaultTabsFromEnv() {
   const commandUsersUrl = String(process.env.DEFAULT_COMMAND_USERS_URL || '').trim();
   if (commandUsersUrl) {
     tabs.push({ name: 'command_users', url: commandUsersUrl });
+  }
+
+  const trainingUrl = String(process.env.DEFAULT_TRAINING_URL || '').trim();
+  if (trainingUrl) {
+    tabs.push({ name: DEFAULT_TRAINING_TAB_NAME, url: trainingUrl });
+  }
+
+  const disciplineUrl = String(process.env.DEFAULT_DISCIPLINE_URL || '').trim();
+  if (disciplineUrl) {
+    tabs.push({ name: DEFAULT_DISCIPLINE_TAB_NAME, url: disciplineUrl });
   }
 
   const rawExtra = String(process.env.DEFAULT_SHEETS_TABS || '').trim();
@@ -1194,21 +1260,35 @@ function getDefaultTabsFromEnv() {
   });
 }
 
-function saveSheetsConfig(config) {
-  ensureDataDir();
+function normalizeSheetsConfig(config) {
   const safeTabs = Array.isArray(config && config.tabs)
     ? config.tabs
       .map(t => ({ name: sanitizeName(t && t.name), url: String(t && t.url || '').trim() }))
       .filter(t => t.name && t.url)
     : [];
 
-  const payload = {
+  const launchNames = Array.isArray(config && config.launchTabNames) && config.launchTabNames.length
+    ? config.launchTabNames
+    : DEFAULT_LAUNCH_TAB_NAMES;
+
+  return {
     tabs: ensureHardsetRosterTab(safeTabs),
     autoSyncOnLoad: !!(config && config.autoSyncOnLoad),
+    launchTabsOnLogin: typeof (config && config.launchTabsOnLogin) === 'boolean'
+      ? !!config.launchTabsOnLogin
+      : true,
+    launchTabNames: Array.from(new Set(launchNames.map(sanitizeName).filter(Boolean))),
     lastSync: (config && config.lastSync) || null
   };
+}
 
+function saveSheetsConfig(config) {
+  ensureDataDir();
+  const payload = normalizeSheetsConfig(config);
   fs.writeFileSync(SHEETS_CONFIG_FILE, JSON.stringify(payload, null, 2));
+  dbUpsertPortalSetting('sheets_config', payload).catch((err) => {
+    console.error('Failed to sync sheets config to DB:', err.message || String(err));
+  });
   return payload;
 }
 
@@ -1499,6 +1579,8 @@ app.post('/api/auth/link-command-users', async (req, res) => {
     const updated = saveSheetsConfig({
       tabs,
       autoSyncOnLoad: current.autoSyncOnLoad,
+      launchTabsOnLogin: current.launchTabsOnLogin,
+      launchTabNames: current.launchTabNames,
       lastSync: current.lastSync
     });
 
@@ -1531,7 +1613,7 @@ app.post('/api/auth/logout', async (req, res) => {
   }
 });
 
-app.post('/api/auth/change-password', requireAuth, (req, res) => {
+app.post('/api/auth/change-password', requireAuth, async (req, res) => {
   try {
     const oldPassword = String(req.body && req.body.oldPassword || '');
     const newPassword = String(req.body && req.body.newPassword || '');
@@ -1559,6 +1641,7 @@ app.post('/api/auth/change-password', requireAuth, (req, res) => {
     users[idx].passwordHash = hashPassword(newPassword);
     users[idx].passwordUpdatedAt = new Date().toISOString();
     saveJsonFile(USERS_FILE, users);
+    await dbUpsertUserRecord(users[idx]);
 
     return res.json({ ok: true, message: 'Password updated successfully.' });
   } catch (err) {
@@ -1566,7 +1649,7 @@ app.post('/api/auth/change-password', requireAuth, (req, res) => {
   }
 });
 
-app.post('/api/auth/admin-reset-password', requireAuth, (req, res) => {
+app.post('/api/auth/admin-reset-password', requireAuth, async (req, res) => {
   try {
     if (!hasAdminAccess(req.auth)) {
       return res.status(403).json({ error: 'Admin reset requires elevated role.' });
@@ -1591,6 +1674,7 @@ app.post('/api/auth/admin-reset-password', requireAuth, (req, res) => {
     users[idx].passwordUpdatedAt = new Date().toISOString();
     users[idx].passwordResetBy = req.auth.email;
     saveJsonFile(USERS_FILE, users);
+    await dbUpsertUserRecord(users[idx]);
 
     return res.json({ ok: true, message: 'Password reset for ' + targetEmail + '.' });
   } catch (err) {
@@ -2068,6 +2152,8 @@ app.put('/api/sheets/config', (req, res) => {
     const updated = saveSheetsConfig({
       tabs: Array.isArray(incoming.tabs) ? incoming.tabs : current.tabs,
       autoSyncOnLoad: typeof incoming.autoSyncOnLoad === 'boolean' ? incoming.autoSyncOnLoad : current.autoSyncOnLoad,
+      launchTabsOnLogin: typeof incoming.launchTabsOnLogin === 'boolean' ? incoming.launchTabsOnLogin : current.launchTabsOnLogin,
+      launchTabNames: Array.isArray(incoming.launchTabNames) ? incoming.launchTabNames : current.launchTabNames,
       lastSync: current.lastSync
     });
     res.json(updated);
@@ -2153,6 +2239,8 @@ app.post('/api/reports/link-disciplinary-source', requireAuth, async (req, res) 
     saveSheetsConfig({
       tabs,
       autoSyncOnLoad: sheetsConfig.autoSyncOnLoad,
+      launchTabsOnLogin: sheetsConfig.launchTabsOnLogin,
+      launchTabNames: sheetsConfig.launchTabNames,
       lastSync: sheetsConfig.lastSync
     });
 
@@ -2184,6 +2272,8 @@ app.post('/api/reports/link-evaluation-source', requireAuth, async (req, res) =>
     saveSheetsConfig({
       tabs,
       autoSyncOnLoad: sheetsConfig.autoSyncOnLoad,
+      launchTabsOnLogin: sheetsConfig.launchTabsOnLogin,
+      launchTabNames: sheetsConfig.launchTabNames,
       lastSync: sheetsConfig.lastSync
     });
 

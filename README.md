@@ -22,6 +22,8 @@ Core Features
 - Reports queue with filters, details, and approval actions
 - Internal messaging (inbox/sent/unread count)
 - Google Sheets tab linking and sync status
+- DB-backed persistence for users/sessions/admin-role overrides/FTO assignments (when `DATABASE_URL` is set)
+- Optional auto-launch links for roster/training/discipline tabs on dashboard login
 
 Data Files
 ----------
@@ -44,6 +46,16 @@ API Highlights
 - `POST /api/reports/:id/approval` set report status
 - `GET /api/messages/inbox` inbox
 - `POST /api/messages/send` send message
+
+Environment Variables
+---------------------
+- `DATABASE_URL` Postgres connection string to enable DB persistence layer.
+- `DEFAULT_ROSTER_URL` optional default roster sheet URL.
+- `DEFAULT_COMMAND_USERS_URL` optional default `command_users` URL.
+- `DEFAULT_TRAINING_URL` optional default training tab URL.
+- `DEFAULT_DISCIPLINE_URL` optional default discipline tab URL.
+- `DEFAULT_TRAINING_TAB_NAME` optional tab name for training URL (default `training_records`).
+- `DEFAULT_DISCIPLINE_TAB_NAME` optional tab name for discipline URL (default `discipline_records`).
 
 Beta Readiness Checklist
 ------------------------
