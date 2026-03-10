@@ -1024,7 +1024,20 @@ async function ensureCommandUsersLoaded() {
     try {
       await importSheetsTabs([{ name: 'command_users', url: candidate }]);
       records = getCommandUsersRecords();
-      if (records.length) return records;
+      if (records.length) {
+        if (!commandTab) {
+          const nextTabs = tabs.slice();
+          nextTabs.push({ name: 'command_users', url: candidate });
+          saveSheetsConfig({
+            tabs: nextTabs,
+            autoSyncOnLoad: config.autoSyncOnLoad,
+            launchTabsOnLogin: config.launchTabsOnLogin,
+            launchTabNames: config.launchTabNames,
+            lastSync: config.lastSync
+          });
+        }
+        return records;
+      }
     } catch (e) {
       // Try next candidate.
     }
@@ -1167,13 +1180,60 @@ function getRosterRecordId(record) {
 }
 
 function loadFtoRecords() {
-  return loadJsonFile(FTO_FILE, []);
+  const raw = loadJsonFile(FTO_FILE, []);
+  const deduped = dedupeFtoRecords(raw);
+  // Self-heal historical duplicate rows in persistent JSON.
+  if (Array.isArray(raw) && deduped.length !== raw.length) {
+    saveJsonFile(FTO_FILE, deduped);
+  }
+  return deduped;
 }
 
 function saveFtoRecords(records) {
-  const safe = Array.isArray(records) ? records : [];
+  const safe = dedupeFtoRecords(records);
   saveJsonFile(FTO_FILE, safe);
   return safe;
+}
+
+function normalizeFtoRecord(record) {
+  const officerId = String(record && record.officerId || '').trim();
+  if (!officerId) return null;
+  return {
+    officerId,
+    name: String(record && record.name || '').trim(),
+    callsign: String(record && record.callsign || '').trim(),
+    rank: String(record && record.rank || '').trim(),
+    division: String(record && record.division || '').trim(),
+    addedAt: String(record && record.addedAt || '').trim(),
+    addedBy: String(record && record.addedBy || '').trim(),
+    addedByEmail: normalizeEmail(record && record.addedByEmail)
+  };
+}
+
+function dedupeFtoRecords(records) {
+  const list = Array.isArray(records) ? records : [];
+  const byOfficerId = new Map();
+
+  list.forEach((record) => {
+    const normalized = normalizeFtoRecord(record);
+    if (!normalized) return;
+    const key = String(normalized.officerId).trim().toLowerCase();
+    if (!key) return;
+
+    // Keep latest row when duplicates exist.
+    const prev = byOfficerId.get(key);
+    if (!prev) {
+      byOfficerId.set(key, normalized);
+      return;
+    }
+    const prevAt = String(prev.addedAt || '');
+    const nextAt = String(normalized.addedAt || '');
+    if (nextAt.localeCompare(prevAt) >= 0) {
+      byOfficerId.set(key, normalized);
+    }
+  });
+
+  return Array.from(byOfficerId.values());
 }
 
 function loadSheetsConfig() {

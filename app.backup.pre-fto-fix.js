@@ -20,7 +20,6 @@ let unreadMessageCount = 0;
 let messagePollTimer = null;
 let lastLoadedReportItems = [];
 let dataAutoSyncPromise = null;
-let ftoListLoadToken = 0;
 
 function formatUserDisplayName(user) {
   const rank = String((user && user.rank) || '').trim();
@@ -785,12 +784,13 @@ if (addBtn) addBtn.addEventListener('click', addFtoOfficer);
 const refreshBtn = document.getElementById('refreshFtoBtn');
 if (refreshBtn) refreshBtn.addEventListener('click', loadFtoPage);
 
+loadFtoPage();
 if (isLoggedIn()) {
   ensureDataTabsSynced()
     .then(() => loadFtoPage())
-    .catch(() => loadFtoPage());
-} else {
-  loadFtoPage();
+    .catch(() => {
+      // Keep current page state if auto-sync fails.
+    });
 }
 
 }
@@ -1522,12 +1522,10 @@ async function loadFtoList() {
   const body = document.querySelector('#ftoTable tbody');
   if (!body) return;
 
-  const currentLoadToken = ++ftoListLoadToken;
   body.innerHTML = '';
   try {
     const response = await authFetch('/api/fto');
     const data = await response.json();
-    if (currentLoadToken !== ftoListLoadToken) return;
     if (!response.ok) throw new Error(data.error || 'Failed to load FTO list');
 
     const items = Array.isArray(data.items) ? data.items : [];
