@@ -12,7 +12,7 @@ const DEFAULT_ROSTER_SOURCE_URL = 'https://docs.google.com/spreadsheets/d/e/2PAC
 const DEFAULT_DISCIPLINE_SOURCE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vS4seHseWTG0lk0IBKCetQqz2elv2_QRVtFRaCbJIMbONhvsixRjc7VrERdyaW2tqUv6ZUfIA-4EztK/pubhtml?gid=10995956&single=true';
 const DEFAULT_EVALUATION_SOURCE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR6_40O35zd-9GMo_nTg5KS76Svzt1P8ZKrfBQwPAtLloGFtpE1r4JBP3t-F-meLlDKCpvWzZkhMlOb/pub?output=csv&gid=1513386776';
 const PORTAL_OWNER_EMAILS = ['mattprz89@gmail.com'];
-const APP_BUILD = '20260309z29';
+const APP_BUILD = '20260309z30';
 const MESSAGE_POLL_MS = 45000;
 
 let currentUser = null;
@@ -357,26 +357,6 @@ async function autoLinkCommandUsersOnLogin() {
     sessionStorage.setItem(AUTO_COMMAND_USERS_LINK_KEY, '1');
   } catch (err) {
     // Silent by design so login UI stays clean for non-admin users.
-  }
-}
-
-async function linkCommandUsersTab() {
-  const url = String((document.getElementById('commandUsersUrl') || {}).value || '').trim();
-  const status = document.getElementById('accountStatus');
-  if (!url) {
-    if (status) status.textContent = 'Please paste a Command_Users tab link first.';
-    return;
-  }
-
-  try {
-    const data = await linkCommandUsersTabByUrl(url);
-    try { localStorage.setItem(COMMAND_USERS_SOURCE_URL_KEY, url); } catch (e) {}
-
-    const rows = (((data || {}).import || {}).result || []).find(x => x.name === 'command_users');
-    const rowCount = rows && typeof rows.rows === 'number' ? rows.rows : 0;
-    if (status) status.textContent = 'Command_Users linked successfully (' + rowCount + ' rows). You can now create your account.';
-  } catch (err) {
-    if (status) status.textContent = 'Link failed: ' + err.message;
   }
 }
 
