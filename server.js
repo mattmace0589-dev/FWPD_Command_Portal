@@ -3,10 +3,21 @@ const fs = require('fs');
 const path = require('path');
 const cors = require('cors');
 const crypto = require('crypto');
+let PgPool = null;
+try {
+  ({ Pool: PgPool } = require('pg'));
+} catch (e) {
+  PgPool = null;
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const BOOTED_AT = new Date().toISOString();
+const AUTH_SECRET = String(process.env.AUTH_SECRET || 'fwpd-default-auth-secret-change-me');
+const AUTH_TOKEN_TTL_SECONDS = Number(process.env.AUTH_TOKEN_TTL_SECONDS || (60 * 60 * 24 * 30));
+const DATABASE_URL = String(process.env.DATABASE_URL || '').trim();
+const DB_ENABLED = !!(DATABASE_URL && PgPool);
+let dbPool = null;
 
 app.use(cors());
 app.use(express.json());
@@ -30,6 +41,10 @@ const PORTAL_OWNER_EMAILS = String(process.env.PORTAL_OWNER_EMAILS || 'mattprz89
   .split(',')
   .map((s) => String(s || '').trim().toLowerCase())
   .filter(Boolean);
+const PORTAL_DEFAULT_ADMIN_EMAILS = String(process.env.PORTAL_DEFAULT_ADMIN_EMAILS || 'mattprz89@gmail.com')
+  .split(',')
+  .map((s) => String(s || '').trim().toLowerCase())
+  .filter(Boolean);
 const INTERNAL_DATA_FILES = new Set([
   'sheets-config.json',
   'reports-config.json',
@@ -40,6 +55,95 @@ const INTERNAL_DATA_FILES = new Set([
   'role_overrides.json',
   'fto.json'
 ]);
+
+function getDbPool() {
+  if (!DB_ENABLED) return null;
+  if (!dbPool) {
+    const useSsl = !/localhost|127\.0\.0\.1/i.test(DATABASE_URL);
+    dbPool = new PgPool({
+      connectionString: DATABASE_URL,
+      ssl: useSsl ? { rejectUnauthorized: false } : false
+    });
+  }
+  return dbPool;
+}
+
+async function dbQuery(text, params = []) {
+  const pool = getDbPool();
+  if (!pool) throw new Error('DATABASE_URL is not configured.');
+  return pool.query(text, params);
+}
+
+async function initDatabasePersistence() {
+  if (!DB_ENABLED) {
+    console.log('DB persistence disabled (DATABASE_URL not set or pg not installed).');
+    return;
+  }
+
+  await dbQuery(`
+    CREATE TABLE IF NOT EXISTS users (
+      email TEXT PRIMARY KEY,
+      password_hash TEXT NOT NULL,
+      created_at TEXT,
+      password_updated_at TEXT,
+      auto_provisioned BOOLEAN DEFAULT FALSE
+    )
+  `);
+
+  await dbQuery(`
+    CREATE TABLE IF NOT EXISTS sessions (
+      token TEXT PRIMARY KEY,
+      email TEXT NOT NULL,
+      created_at TEXT
+    )
+  `);
+
+  await dbQuery(`
+    CREATE TABLE IF NOT EXISTS role_overrides (
+      email TEXT PRIMARY KEY,
+      role TEXT NOT NULL,
+      updated_at TEXT
+    )
+  `);
+
+  // Hydrate runtime JSON files from DB so existing synchronous app code keeps working.
+  const dbUsers = (await dbQuery('SELECT email, password_hash, created_at, password_updated_at, auto_provisioned FROM users')).rows;
+  const dbSessions = (await dbQuery('SELECT token, email, created_at FROM sessions')).rows;
+  const dbRoleOverrides = (await dbQuery('SELECT email, role FROM role_overrides')).rows;
+
+  if (dbUsers.length) {
+    const payload = dbUsers.map((r) => ({
+      email: normalizeEmail(r.email),
+      passwordHash: String(r.password_hash || ''),
+      createdAt: String(r.created_at || ''),
+      passwordUpdatedAt: String(r.password_updated_at || ''),
+      autoProvisioned: !!r.auto_provisioned
+    }));
+    saveJsonFile(USERS_FILE, payload);
+  }
+
+  if (dbSessions.length) {
+    const payload = dbSessions.map((r) => ({
+      token: String(r.token || ''),
+      email: normalizeEmail(r.email),
+      createdAt: String(r.created_at || '')
+    }));
+    saveJsonFile(SESSIONS_FILE, payload);
+  }
+
+  if (dbRoleOverrides.length) {
+    const payload = {};
+    dbRoleOverrides.forEach((r) => {
+      const email = normalizeEmail(r.email);
+      const role = String(r.role || '').trim().toLowerCase();
+      if (!email || !role) return;
+      payload[email] = role;
+    });
+    saveJsonFile(ROLE_OVERRIDES_FILE, payload);
+  }
+
+  console.log('DB persistence initialized. Users:', dbUsers.length, '| Sessions:', dbSessions.length, '| Role overrides:', dbRoleOverrides.length);
+}
 
 function parseCSV(text) {
   const rows = [];
@@ -543,8 +647,65 @@ function saveRoleOverrides(overrides) {
   return safe;
 }
 
+async function dbUpsertUserRecord(user) {
+  if (!DB_ENABLED || !user) return;
+  const email = normalizeEmail(user.email);
+  if (!email) return;
+  await dbQuery(
+    `INSERT INTO users (email, password_hash, created_at, password_updated_at, auto_provisioned)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (email)
+     DO UPDATE SET password_hash = EXCLUDED.password_hash,
+                   created_at = COALESCE(users.created_at, EXCLUDED.created_at),
+                   password_updated_at = EXCLUDED.password_updated_at,
+                   auto_provisioned = EXCLUDED.auto_provisioned`,
+    [
+      email,
+      String(user.passwordHash || ''),
+      String(user.createdAt || ''),
+      String(user.passwordUpdatedAt || ''),
+      !!user.autoProvisioned
+    ]
+  );
+}
+
+async function dbInsertSessionRecord(token, email, createdAt) {
+  if (!DB_ENABLED) return;
+  await dbQuery(
+    `INSERT INTO sessions (token, email, created_at)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (token)
+     DO UPDATE SET email = EXCLUDED.email, created_at = EXCLUDED.created_at`,
+    [String(token || ''), normalizeEmail(email), String(createdAt || '')]
+  );
+}
+
+async function dbDeleteSessionToken(token) {
+  if (!DB_ENABLED) return;
+  await dbQuery('DELETE FROM sessions WHERE token = $1', [String(token || '')]);
+}
+
+async function dbUpsertRoleOverride(email, role) {
+  if (!DB_ENABLED) return;
+  await dbQuery(
+    `INSERT INTO role_overrides (email, role, updated_at)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (email)
+     DO UPDATE SET role = EXCLUDED.role, updated_at = EXCLUDED.updated_at`,
+    [normalizeEmail(email), String(role || '').trim().toLowerCase(), new Date().toISOString()]
+  );
+}
+
+async function dbDeleteRoleOverride(email) {
+  if (!DB_ENABLED) return;
+  await dbQuery('DELETE FROM role_overrides WHERE email = $1', [normalizeEmail(email)]);
+}
+
 function getEffectiveRole(email, baseRole) {
   const normalizedEmail = normalizeEmail(email);
+  if (normalizedEmail && PORTAL_DEFAULT_ADMIN_EMAILS.includes(normalizedEmail)) {
+    return 'admin';
+  }
   const overrides = loadRoleOverrides();
   if (normalizedEmail && overrides[normalizedEmail]) return overrides[normalizedEmail];
   return String(baseRole || 'command').trim().toLowerCase() || 'command';
@@ -554,8 +715,65 @@ function hashPassword(password) {
   return crypto.createHash('sha256').update(String(password || '')).digest('hex');
 }
 
-function generateToken() {
-  return crypto.randomBytes(24).toString('hex');
+function base64UrlEncode(input) {
+  return Buffer.from(String(input || ''), 'utf8')
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+}
+
+function base64UrlDecode(input) {
+  const normalized = String(input || '').replace(/-/g, '+').replace(/_/g, '/');
+  const padLen = normalized.length % 4;
+  const padded = normalized + (padLen ? '='.repeat(4 - padLen) : '');
+  return Buffer.from(padded, 'base64').toString('utf8');
+}
+
+function signTokenPayload(payloadText) {
+  return crypto
+    .createHmac('sha256', AUTH_SECRET)
+    .update(String(payloadText || ''))
+    .digest('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+}
+
+function generateToken(email) {
+  const normalizedEmail = normalizeEmail(email);
+  if (!normalizedEmail) {
+    return crypto.randomBytes(24).toString('hex');
+  }
+  const now = Math.floor(Date.now() / 1000);
+  const payload = {
+    v: 1,
+    email: normalizedEmail,
+    iat: now,
+    exp: now + AUTH_TOKEN_TTL_SECONDS
+  };
+  const encoded = base64UrlEncode(JSON.stringify(payload));
+  const sig = signTokenPayload(encoded);
+  return 'v1.' + encoded + '.' + sig;
+}
+
+function parseSignedToken(token) {
+  const text = String(token || '').trim();
+  const m = text.match(/^v1\.([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)$/);
+  if (!m) return null;
+  const encoded = m[1];
+  const sig = m[2];
+  if (signTokenPayload(encoded) !== sig) return null;
+  try {
+    const payload = JSON.parse(base64UrlDecode(encoded) || '{}');
+    const email = normalizeEmail(payload && payload.email);
+    const exp = Number(payload && payload.exp || 0);
+    const now = Math.floor(Date.now() / 1000);
+    if (!email || !exp || exp < now) return null;
+    return { email, exp };
+  } catch (e) {
+    return null;
+  }
 }
 
 function getCommandUsersRecords() {
@@ -696,21 +914,19 @@ function getAuthFromRequest(req) {
 
   const sessions = loadJsonFile(SESSIONS_FILE, []);
   const session = sessions.find(s => s && s.token === token);
-  if (!session) return null;
+  const signed = parseSignedToken(token);
+  const authEmail = normalizeEmail((session && session.email) || (signed && signed.email));
+  if (!authEmail) return null;
 
-  const users = loadJsonFile(USERS_FILE, []);
-  const user = users.find(u => normalizeEmail(u.email) === normalizeEmail(session.email));
-  if (!user) return null;
-
-  const commandProfile = findCommandUserByEmailFromRecords(user.email, getCommandUsersRecords());
+  const commandProfile = findCommandUserByEmailFromRecords(authEmail, getCommandUsersRecords());
   if (!commandProfile) return null;
 
   return {
     token,
-    email: normalizeEmail(user.email),
+    email: authEmail,
     characterName: commandProfile.characterName,
     rank: commandProfile.rank,
-    role: getEffectiveRole(user.email, commandProfile.role),
+    role: getEffectiveRole(authEmail, commandProfile.role),
     baseRole: String(commandProfile.role || 'command').trim().toLowerCase() || 'command'
   };
 }
@@ -1034,17 +1250,22 @@ app.post('/api/auth/create-account', async (req, res) => {
       return res.status(409).json({ error: 'Account already exists. Please log in.' });
     }
 
-    users.push({
+    const createdAt = new Date().toISOString();
+    const createdUser = {
       email,
       passwordHash: hashPassword(password),
-      createdAt: new Date().toISOString()
-    });
+      createdAt
+    };
+    users.push(createdUser);
     saveJsonFile(USERS_FILE, users);
+    await dbUpsertUserRecord(createdUser);
 
     const sessions = loadJsonFile(SESSIONS_FILE, []);
-    const token = generateToken();
-    sessions.push({ token, email, createdAt: new Date().toISOString() });
+    const token = generateToken(email);
+    const sessionCreatedAt = new Date().toISOString();
+    sessions.push({ token, email, createdAt: sessionCreatedAt });
     saveJsonFile(SESSIONS_FILE, sessions);
+    await dbInsertSessionRecord(token, email, sessionCreatedAt);
 
     return res.status(201).json({
       ok: true,
@@ -1083,20 +1304,33 @@ app.post('/api/auth/login', async (req, res) => {
     }
 
     const users = loadJsonFile(USERS_FILE, []);
-    const user = users.find(u => normalizeEmail(u.email) === email);
-    if (!user || user.passwordHash !== hashPassword(password)) {
-      return res.status(401).json({ error: 'Invalid email or password.' });
-    }
-
     const commandProfile = await findCommandUserByEmail(email);
     if (!commandProfile) {
       return res.status(403).json({ error: 'Email is no longer authorized in Command_Users tab.' });
     }
 
+    let user = users.find(u => normalizeEmail(u.email) === email);
+    if (!user) {
+      // Auto-provision account on login for authorized Command_Users entries.
+      user = {
+        email,
+        passwordHash: hashPassword(password),
+        createdAt: new Date().toISOString(),
+        autoProvisioned: true
+      };
+      users.push(user);
+      saveJsonFile(USERS_FILE, users);
+      await dbUpsertUserRecord(user);
+    } else if (String(user.passwordHash || '') !== hashPassword(password)) {
+      return res.status(401).json({ error: 'Invalid email or password.' });
+    }
+
     const sessions = loadJsonFile(SESSIONS_FILE, []);
-    const token = generateToken();
-    sessions.push({ token, email, createdAt: new Date().toISOString() });
+    const token = generateToken(email);
+    const sessionCreatedAt = new Date().toISOString();
+    sessions.push({ token, email, createdAt: sessionCreatedAt });
     saveJsonFile(SESSIONS_FILE, sessions);
+    await dbInsertSessionRecord(token, email, sessionCreatedAt);
 
     return res.json({
       ok: true,
@@ -1142,7 +1376,7 @@ app.get('/api/auth/me', (req, res) => {
   res.json({ ok: true, user: auth });
 });
 
-app.post('/api/auth/logout', (req, res) => {
+app.post('/api/auth/logout', async (req, res) => {
   try {
     const authHeader = String(req.headers.authorization || '');
     const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
@@ -1151,6 +1385,7 @@ app.post('/api/auth/logout', (req, res) => {
     const sessions = loadJsonFile(SESSIONS_FILE, []);
     const filtered = sessions.filter(s => s && s.token !== token);
     saveJsonFile(SESSIONS_FILE, filtered);
+    await dbDeleteSessionToken(token);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message || String(err) });
@@ -1262,7 +1497,7 @@ app.get('/api/admin/users', requireAuth, (req, res) => {
   }
 });
 
-app.post('/api/admin/set-admin', requireAuth, (req, res) => {
+app.post('/api/admin/set-admin', requireAuth, async (req, res) => {
   try {
     if (!hasAdminAccess(req.auth)) {
       return res.status(403).json({ error: 'Admin access required.' });
@@ -1281,6 +1516,8 @@ app.post('/api/admin/set-admin', requireAuth, (req, res) => {
     if (isAdmin) overrides[email] = 'admin';
     else delete overrides[email];
     saveRoleOverrides(overrides);
+    if (isAdmin) await dbUpsertRoleOverride(email, 'admin');
+    else await dbDeleteRoleOverride(email);
 
     const role = getEffectiveRole(email, commandProfile.role);
     res.json({ ok: true, email, role, isAdmin: isPrivilegedRole(role) });
@@ -1289,7 +1526,7 @@ app.post('/api/admin/set-admin', requireAuth, (req, res) => {
   }
 });
 
-app.post('/api/admin/set-role', requireAuth, (req, res) => {
+app.post('/api/admin/set-role', requireAuth, async (req, res) => {
   try {
     if (!hasLeadershipAccess(req.auth)) {
       return res.status(403).json({ error: 'Role update requires chief, commander, or admin access.' });
@@ -1308,6 +1545,7 @@ app.post('/api/admin/set-role', requireAuth, (req, res) => {
     const overrides = loadRoleOverrides();
     overrides[email] = role;
     saveRoleOverrides(overrides);
+    await dbUpsertRoleOverride(email, role);
 
     return res.json({ ok: true, email, role, effectiveRole: getEffectiveRole(email, commandProfile.role) });
   } catch (err) {
@@ -1931,6 +2169,16 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-app.listen(PORT, ()=>{
-  console.log('Server running on http://localhost:'+PORT);
-});
+async function startServer() {
+  try {
+    await initDatabasePersistence();
+  } catch (err) {
+    console.error('DB initialization failed. Continuing with file-based persistence only.', err.message || String(err));
+  }
+
+  app.listen(PORT, () => {
+    console.log('Server running on http://localhost:' + PORT);
+  });
+}
+
+startServer();
