@@ -19,6 +19,7 @@ let currentUser = null;
 let unreadMessageCount = 0;
 let messagePollTimer = null;
 let lastLoadedReportItems = [];
+let dataAutoSyncPromise = null;
 
 function formatUserDisplayName(user) {
   const rank = String((user && user.rank) || '').trim();
@@ -451,6 +452,25 @@ function setLocalSyncTabs(tabs) {
   }
 }
 
+async function ensureDataTabsSynced() {
+  if (!isLoggedIn()) return;
+  if (dataAutoSyncPromise) {
+    await dataAutoSyncPromise;
+    return;
+  }
+
+  // Prevent duplicate sync requests when multiple pages initialize together.
+  dataAutoSyncPromise = (async () => {
+    await autoSyncOnLoad();
+  })();
+
+  try {
+    await dataAutoSyncPromise;
+  } finally {
+    dataAutoSyncPromise = null;
+  }
+}
+
 function loadPage(page){
 applyRuntimeLayoutFixes();
 if(!isLoggedIn()){
@@ -576,6 +596,16 @@ document.getElementById("content").innerHTML = `
 
 loadReportsSummary();
 loadReportItems();
+if (isLoggedIn()) {
+  ensureDataTabsSynced()
+    .then(() => {
+      loadReportsSummary();
+      loadReportItems();
+    })
+    .catch(() => {
+      // Keep current data visible if auto-sync fails.
+    });
+}
 
 const linkBtn = document.getElementById('linkDisciplineSourceBtn');
 if (linkBtn) linkBtn.addEventListener('click', linkDisciplinarySource);
@@ -755,6 +785,13 @@ const refreshBtn = document.getElementById('refreshFtoBtn');
 if (refreshBtn) refreshBtn.addEventListener('click', loadFtoPage);
 
 loadFtoPage();
+if (isLoggedIn()) {
+  ensureDataTabsSynced()
+    .then(() => loadFtoPage())
+    .catch(() => {
+      // Keep current page state if auto-sync fails.
+    });
+}
 
 }
 
@@ -888,6 +925,13 @@ document.getElementById("content").innerHTML = `
 `;
 
 loadRoster();
+if (isLoggedIn()) {
+  ensureDataTabsSynced()
+    .then(() => loadRoster())
+    .catch(() => {
+      // Keep current roster state if auto-sync fails.
+    });
+}
 
 document.getElementById('refreshRoster').addEventListener('click', loadRoster);
 if (isLoggedIn()) {
