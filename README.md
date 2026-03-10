@@ -1,68 +1,60 @@
-FWPD Command Portal — Quick Start
+FWPD Command Portal
 
-This is a local portal that stores roster data in a simple JSON file (zero cost, no cloud needed).
+Command workflow portal for roster management, reports review/approval, account controls, and internal messaging.
 
-Quick Setup (5 minutes)
------------------------
-1. Download and install Node.js from https://nodejs.org/
-2. Restart your terminal (PowerShell / CMD).
-3. Open a terminal in this project folder and run:
-```bash
-npm install
-npm start
-```
-4. Open http://localhost:3000 in your browser.
-5. Click **Officer Roster** → Click **Add Officer** to add/edit/delete from the portal.
+Quick Start
+-----------
+1. Install Node.js from https://nodejs.org/
+2. Open this project in a terminal.
+3. Run:
 
-Data Storage
-------------
-All roster data is stored locally in `data/roster.json` — no cloud, no fees, no Firebase paywall.
-
-API Endpoints (for reference)
------------------------------
-The server exposes these endpoints:
-- `GET /api/roster` — list all officers
-- `POST /api/roster` — add new officer (JSON body)
-- `PUT /api/roster/:id` — update officer
-- `DELETE /api/roster/:id` — delete officer
-
-Example add (using curl or Postman):
-```bash
-curl -X POST http://localhost:3000/api/roster \
-  -H "Content-Type: application/json" \
-  -d '{"ID":"1","Name":"John Doe","Callsign":"Alpha-1","Rank":"Officer","Division":"Adam"}'
-```
-
-Import from Google Sheets
---------------------------
-If you have roster data in Google Sheets:
-1. File → Download → CSV.
-2. Save as `roster.csv` in the project folder.
-3. Restart the server (it will auto-import on first run).
-4. Data is now available in the portal.
-
-That's it! No Firebase, no paywall, just local.
-
-Local editable server (add/edit/delete roster)
----------------------------------------------
-If you want to edit the roster from the application, you can run the included Node server which exposes a simple REST API and serves the portal.
-
-1) Install Node.js (if not installed) and from the project folder run:
 ```bash
 npm install
 npm start
 ```
 
-2) The server runs at `http://localhost:3000` by default. Open that URL (or use Live Server) and go to Officer Roster.
+4. Open `http://localhost:3000`
 
-3) Click the **Use Local Server** button to load data from the local API (`/api/roster`).
+Core Features
+-------------
+- Command login + account creation (backed by `command_users` import)
+- Officer roster CRUD (with per-officer notes)
+- Reports queue with filters, details, and approval actions
+- Internal messaging (inbox/sent/unread count)
+- Google Sheets tab linking and sync status
 
-4) Data is persisted in `data/roster.json`. You can edit it directly or use the API endpoints:
-- `GET /api/roster` — list
-- `POST /api/roster` — add (JSON body)
-- `PUT /api/roster/:id` — update
-- `DELETE /api/roster/:id` — delete
+Data Files
+----------
+- `data/roster.json`
+- `data/sheets-config.json`
+- `data/reports-config.json`
+- `data/report_approvals.json`
+- `data/users.json`
+- `data/sessions.json`
+- `data/internal_mailbox.json`
 
-Notes:
-- On first run, if `roster.csv` exists in the project root the server will import it into `data/roster.json`.
-- This local server is for development only — do not expose it publicly without adding authentication.
+API Highlights
+--------------
+- `GET /api/health` health/uptime check
+- `GET /api/roster` list officers
+- `POST /api/roster` add officer
+- `PUT /api/roster/:id` update officer
+- `DELETE /api/roster/:id` delete officer
+- `GET /api/reports/items` report list
+- `POST /api/reports/:id/approval` set report status
+- `GET /api/messages/inbox` inbox
+- `POST /api/messages/send` send message
+
+Beta Readiness Checklist
+------------------------
+1. Confirm `GET /api/health` returns `ok: true`.
+2. Log in with a command account and verify sidebar/pages load.
+3. Test roster CRUD on one officer, including notes save.
+4. Open Reports, filter by officer, open details, approve/deny one report.
+5. Send one internal message and confirm inbox/unread updates.
+6. Verify Google sync status and configured tabs appear as expected.
+7. Verify mobile layout (sidebar, tables, profile buttons).
+
+Deployment Note
+---------------
+If you use multiple local clones, always deploy from the same path your Git client tracks (to avoid pushing stale files).

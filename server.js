@@ -106,10 +106,102 @@ async function initDatabasePersistence() {
     )
   `);
 
+  await dbQuery(`
+    CREATE TABLE IF NOT EXISTS fto_members (
+      officer_id TEXT PRIMARY KEY,
+      name TEXT,
+      callsign TEXT,
+      rank TEXT,
+      division TEXT,
+      added_at TEXT,
+      added_by TEXT,
+      added_by_email TEXT
+    )
+  `);
+
+  // Migrate local JSON state into DB (idempotent upserts) to prevent loss across restarts.
+  const localUsers = loadJsonFile(USERS_FILE, []);
+  for (const u of localUsers) {
+    const email = normalizeEmail(u && u.email);
+    if (!email) continue;
+    await dbQuery(
+      `INSERT INTO users (email, password_hash, created_at, password_updated_at, auto_provisioned)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (email)
+       DO UPDATE SET password_hash = EXCLUDED.password_hash,
+                     created_at = COALESCE(users.created_at, EXCLUDED.created_at),
+                     password_updated_at = EXCLUDED.password_updated_at,
+                     auto_provisioned = EXCLUDED.auto_provisioned`,
+      [
+        email,
+        String(u && u.passwordHash || ''),
+        String(u && u.createdAt || ''),
+        String(u && u.passwordUpdatedAt || ''),
+        !!(u && u.autoProvisioned)
+      ]
+    );
+  }
+
+  const localSessions = loadJsonFile(SESSIONS_FILE, []);
+  for (const s of localSessions) {
+    const token = String(s && s.token || '').trim();
+    const email = normalizeEmail(s && s.email);
+    if (!token || !email) continue;
+    await dbQuery(
+      `INSERT INTO sessions (token, email, created_at)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (token)
+       DO UPDATE SET email = EXCLUDED.email, created_at = EXCLUDED.created_at`,
+      [token, email, String(s && s.createdAt || '')]
+    );
+  }
+
+  const localOverrides = loadRoleOverrides();
+  for (const email of Object.keys(localOverrides || {})) {
+    const role = String(localOverrides[email] || '').trim().toLowerCase();
+    if (!email || !role) continue;
+    await dbQuery(
+      `INSERT INTO role_overrides (email, role, updated_at)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (email)
+       DO UPDATE SET role = EXCLUDED.role, updated_at = EXCLUDED.updated_at`,
+      [normalizeEmail(email), role, new Date().toISOString()]
+    );
+  }
+
+  const localFto = loadFtoRecords();
+  for (const f of localFto) {
+    const officerId = String(f && f.officerId || '').trim();
+    if (!officerId) continue;
+    await dbQuery(
+      `INSERT INTO fto_members (officer_id, name, callsign, rank, division, added_at, added_by, added_by_email)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       ON CONFLICT (officer_id)
+       DO UPDATE SET name = EXCLUDED.name,
+                     callsign = EXCLUDED.callsign,
+                     rank = EXCLUDED.rank,
+                     division = EXCLUDED.division,
+                     added_at = EXCLUDED.added_at,
+                     added_by = EXCLUDED.added_by,
+                     added_by_email = EXCLUDED.added_by_email`,
+      [
+        officerId,
+        String(f && f.name || ''),
+        String(f && f.callsign || ''),
+        String(f && f.rank || ''),
+        String(f && f.division || ''),
+        String(f && f.addedAt || ''),
+        String(f && f.addedBy || ''),
+        normalizeEmail(f && f.addedByEmail)
+      ]
+    );
+  }
+
   // Hydrate runtime JSON files from DB so existing synchronous app code keeps working.
   const dbUsers = (await dbQuery('SELECT email, password_hash, created_at, password_updated_at, auto_provisioned FROM users')).rows;
   const dbSessions = (await dbQuery('SELECT token, email, created_at FROM sessions')).rows;
   const dbRoleOverrides = (await dbQuery('SELECT email, role FROM role_overrides')).rows;
+  const dbFto = (await dbQuery('SELECT officer_id, name, callsign, rank, division, added_at, added_by, added_by_email FROM fto_members')).rows;
 
   if (dbUsers.length) {
     const payload = dbUsers.map((r) => ({
@@ -142,7 +234,21 @@ async function initDatabasePersistence() {
     saveJsonFile(ROLE_OVERRIDES_FILE, payload);
   }
 
-  console.log('DB persistence initialized. Users:', dbUsers.length, '| Sessions:', dbSessions.length, '| Role overrides:', dbRoleOverrides.length);
+  if (dbFto.length) {
+    const payload = dbFto.map((r) => ({
+      officerId: String(r.officer_id || ''),
+      name: String(r.name || ''),
+      callsign: String(r.callsign || ''),
+      rank: String(r.rank || ''),
+      division: String(r.division || ''),
+      addedAt: String(r.added_at || ''),
+      addedBy: String(r.added_by || ''),
+      addedByEmail: normalizeEmail(r.added_by_email)
+    }));
+    saveFtoRecords(payload);
+  }
+
+  console.log('DB persistence initialized. Users:', dbUsers.length, '| Sessions:', dbSessions.length, '| Role overrides:', dbRoleOverrides.length, '| FTO:', dbFto.length);
 }
 
 function parseCSV(text) {
@@ -699,6 +805,39 @@ async function dbUpsertRoleOverride(email, role) {
 async function dbDeleteRoleOverride(email) {
   if (!DB_ENABLED) return;
   await dbQuery('DELETE FROM role_overrides WHERE email = $1', [normalizeEmail(email)]);
+}
+
+async function dbUpsertFtoMember(item) {
+  if (!DB_ENABLED || !item) return;
+  const officerId = String(item.officerId || '').trim();
+  if (!officerId) return;
+  await dbQuery(
+    `INSERT INTO fto_members (officer_id, name, callsign, rank, division, added_at, added_by, added_by_email)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+     ON CONFLICT (officer_id)
+     DO UPDATE SET name = EXCLUDED.name,
+                   callsign = EXCLUDED.callsign,
+                   rank = EXCLUDED.rank,
+                   division = EXCLUDED.division,
+                   added_at = EXCLUDED.added_at,
+                   added_by = EXCLUDED.added_by,
+                   added_by_email = EXCLUDED.added_by_email`,
+    [
+      officerId,
+      String(item.name || ''),
+      String(item.callsign || ''),
+      String(item.rank || ''),
+      String(item.division || ''),
+      String(item.addedAt || ''),
+      String(item.addedBy || ''),
+      normalizeEmail(item.addedByEmail)
+    ]
+  );
+}
+
+async function dbDeleteFtoMember(officerId) {
+  if (!DB_ENABLED) return;
+  await dbQuery('DELETE FROM fto_members WHERE officer_id = $1', [String(officerId || '').trim()]);
 }
 
 function getEffectiveRole(email, baseRole) {
@@ -1726,7 +1865,7 @@ app.get('/api/fto', requireAuth, (req, res) => {
   }
 });
 
-app.post('/api/fto', requireAuth, (req, res) => {
+app.post('/api/fto', requireAuth, async (req, res) => {
   try {
     if (!hasLeadershipAccess(req.auth)) {
       return res.status(403).json({ error: 'FTO updates require chief, commander, or admin role.' });
@@ -1756,6 +1895,7 @@ app.post('/api/fto', requireAuth, (req, res) => {
     };
     list.push(item);
     saveFtoRecords(list);
+    await dbUpsertFtoMember(item);
 
     // Mirror FTO status onto roster so officer profile can display a badge.
     const rosterIdx = roster.findIndex((x) => getRosterRecordId(x) === officerId);
@@ -1772,7 +1912,7 @@ app.post('/api/fto', requireAuth, (req, res) => {
   }
 });
 
-app.delete('/api/fto/:officerId', requireAuth, (req, res) => {
+app.delete('/api/fto/:officerId', requireAuth, async (req, res) => {
   try {
     if (!hasLeadershipAccess(req.auth)) {
       return res.status(403).json({ error: 'FTO updates require chief, commander, or admin role.' });
@@ -1786,6 +1926,7 @@ app.delete('/api/fto/:officerId', requireAuth, (req, res) => {
     const after = list.filter((x) => String(x && x.officerId || '').trim() !== officerId);
     if (after.length === before) return res.status(404).json({ error: 'Officer is not in FTO list.' });
     saveFtoRecords(after);
+    await dbDeleteFtoMember(officerId);
 
     // Clear mirrored roster badge fields on remove.
     const roster = loadJson();
