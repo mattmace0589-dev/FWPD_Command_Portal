@@ -21,6 +21,7 @@ let messagePollTimer = null;
 let lastLoadedReportItems = [];
 let dataAutoSyncPromise = null;
 let ftoListLoadToken = 0;
+let headerAlertLines = [];
 
 function formatUserDisplayName(user) {
   const rank = String((user && user.rank) || '').trim();
@@ -115,22 +116,114 @@ function showAuthBanner() {
   const existing = document.getElementById('authBanner');
   if (existing) existing.remove();
 
-  const title = document.querySelector('.title');
-  if (!title) return;
+  const tools = ensureHeaderTools();
+  if (!tools) return;
 
-  const banner = document.createElement('div');
-  banner.id = 'authBanner';
-  banner.style.fontSize = '12px';
-  banner.style.letterSpacing = '0';
-  banner.style.marginTop = '6px';
+  const accountBtn = document.getElementById('headerAccountBtn');
+  const logoutBtn = document.getElementById('headerLogoutBtn');
+  const notifyBtn = document.getElementById('headerNotifyBtn');
+  const notifyPanel = document.getElementById('headerNotifyPanel');
+
   if (currentUser) {
-    const unreadText = unreadMessageCount > 0 ? (' | Unread messages: ' + unreadMessageCount) : '';
-    banner.textContent = 'Logged in as ' + formatUserDisplayName(currentUser) + unreadText;
+    if (accountBtn) {
+      accountBtn.textContent = 'Account';
+      accountBtn.disabled = false;
+      accountBtn.title = formatUserDisplayName(currentUser);
+    }
+    if (logoutBtn) {
+      logoutBtn.disabled = false;
+      logoutBtn.style.display = 'inline-block';
+    }
   } else {
-    banner.textContent = 'Not logged in';
+    if (accountBtn) {
+      accountBtn.textContent = 'Account';
+      accountBtn.disabled = true;
+      accountBtn.title = 'Login required';
+    }
+    if (logoutBtn) {
+      logoutBtn.disabled = true;
+      logoutBtn.style.display = 'inline-block';
+    }
+    if (notifyBtn) notifyBtn.disabled = true;
+    if (notifyPanel) notifyPanel.hidden = true;
   }
 
-  title.appendChild(banner);
+  setHeaderAlerts(headerAlertLines);
+}
+
+function ensureHeaderTools() {
+  const header = document.querySelector('.header');
+  if (!header) return null;
+
+  let tools = document.getElementById('headerTools');
+  if (tools) return tools;
+
+  tools = document.createElement('div');
+  tools.id = 'headerTools';
+  tools.className = 'header-tools';
+  tools.innerHTML = '' +
+    '<button id="headerNotifyBtn" class="header-tool-btn" type="button">Bell</button>' +
+    '<div id="headerNotifyPanel" class="header-notify-panel" hidden>No alerts.</div>' +
+    '<button id="headerAccountBtn" class="header-tool-btn" type="button">Account</button>' +
+    '<button id="headerLogoutBtn" class="header-tool-btn" type="button">Logout</button>';
+  header.appendChild(tools);
+
+  const notifyBtn = tools.querySelector('#headerNotifyBtn');
+  const notifyPanel = tools.querySelector('#headerNotifyPanel');
+  const accountBtn = tools.querySelector('#headerAccountBtn');
+  const logoutBtn = tools.querySelector('#headerLogoutBtn');
+
+  if (notifyBtn && notifyPanel) {
+    notifyBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      notifyPanel.hidden = !notifyPanel.hidden;
+      if (!notifyPanel.hidden) loadDashboardAlerts();
+    });
+  }
+
+  if (accountBtn) {
+    accountBtn.addEventListener('click', () => {
+      if (!isLoggedIn()) return;
+      loadPage('account');
+    });
+  }
+
+  if (logoutBtn) {
+    logoutBtn.addEventListener('click', () => {
+      if (!isLoggedIn()) return;
+      logoutAccount();
+    });
+  }
+
+  document.addEventListener('click', (event) => {
+    if (!notifyPanel || notifyPanel.hidden) return;
+    if (!tools.contains(event.target)) notifyPanel.hidden = true;
+  });
+
+  return tools;
+}
+
+function setHeaderAlerts(lines) {
+  headerAlertLines = Array.isArray(lines) ? lines.filter(Boolean) : [];
+
+  const notifyBtn = document.getElementById('headerNotifyBtn');
+  const notifyPanel = document.getElementById('headerNotifyPanel');
+  if (!notifyBtn || !notifyPanel) return;
+
+  const alertCount = headerAlertLines.length;
+  notifyBtn.disabled = !isLoggedIn();
+  notifyBtn.textContent = alertCount > 0 ? ('Bell (' + alertCount + ')') : 'Bell';
+  notifyBtn.title = 'Unread messages: ' + String(unreadMessageCount || 0);
+
+  if (!headerAlertLines.length) {
+    notifyPanel.innerHTML = '<div class="notify-empty">No current alerts.</div>';
+    return;
+  }
+
+  notifyPanel.innerHTML = headerAlertLines
+    .slice(0, 12)
+    .map((line) => '<div class="notify-item">' + escapeHtml(String(line || '')) + '</div>')
+    .join('');
 }
 
 function applyRuntimeLayoutFixes() {
@@ -486,23 +579,16 @@ setAuthLockedLayout(false);
 if(page === "dashboard"){
 
 document.getElementById("content").innerHTML = `
+<div id="welcomeMessage" style="margin-top:2px;margin-bottom:10px;color:#d8f3ff"></div>
 <h2>Command Dashboard</h2>
 
-<p>Welcome to the FWPD Command Portal.</p>
-
-<p>Use the sidebar to navigate the system.</p>
-
-<div id="welcomeMessage" style="margin-top:8px;color:#d8f3ff"></div>
-
-<div style="margin-top:20px">
-<b>Alerts</b>
-<pre id="dashboardAlerts" style="margin-top:8px;white-space:pre-wrap;background:rgba(0,0,0,.2);padding:10px;border:1px solid rgba(255,255,255,.2)">Loading alerts...</pre>
+<div style="margin-top:10px;border:1px solid rgba(255,255,255,.2);padding:12px;background:rgba(0,0,0,.15)">
+  <div style="margin:0 0 12px 0;color:#f3bc40;font-family:'Barlow Condensed','Trebuchet MS',sans-serif;font-size:24px;letter-spacing:.5px;line-height:1.1">FORT WORTH POLICE DEPARTMENT - MISSION STATEMENT</div>
+  <p style="margin-top:8px;margin-bottom:10px;line-height:1.45">The Fort Worth Police Department is committed to safeguarding our community through integrity, professionalism, and unwavering service. Our mission is to protect life and property, uphold the law with fairness and respect, and strengthen public trust through transparency and accountability.</p>
+  <p style="margin:0;line-height:1.45">We strive to maintain a safe and thriving city by working collaboratively with our residents, embracing innovation, and holding ourselves to the highest standards of conduct. Every member of this department is dedicated to acting with courage, compassion, and honor in the pursuit of justice.</p>
 </div>
 
-<div style="margin-top:24px">
-<b>Google Sync Status</b>
-<pre id="syncStatusBox" style="margin-top:8px;white-space:pre-wrap;background:rgba(0,0,0,.2);padding:10px;border:1px solid rgba(255,255,255,.2)">Loading sync status...</pre>
-</div>
+<p style="margin-top:18px;color:#f4cf76">Use the top-right Bell for active alerts and notifications.</p>
 `;
 
 if (currentUser) {
@@ -513,7 +599,6 @@ if (currentUser) {
 }
 
 loadDashboardAlerts();
-loadSyncStatus();
 autoSyncOnLoad();
 
 }
@@ -1706,7 +1791,6 @@ function mapAlertRow(source, row) {
 
 async function loadDashboardAlerts() {
   const box = document.getElementById('dashboardAlerts');
-  if (!box) return;
 
   try {
     const tabsRes = await fetch('/api/sheets/tabs');
@@ -1722,7 +1806,8 @@ async function loadDashboardAlerts() {
 
     const available = sources.filter(s => tabs.includes(s.key));
     if (!available.length) {
-      box.textContent = 'No alert tabs imported yet.';
+      if (box) box.textContent = 'No alert tabs imported yet.';
+      setHeaderAlerts([]);
       return;
     }
 
@@ -1738,9 +1823,13 @@ async function loadDashboardAlerts() {
       alertRows.forEach(r => lines.push(mapAlertRow(src.label, r)));
     }
 
-    box.textContent = lines.length ? lines.join('\n\n') : ('No alert records found. Tabs checked: ' + available.map(x => x.key).join(', '));
+    if (box) {
+      box.textContent = lines.length ? lines.join('\n\n') : ('No alert records found. Tabs checked: ' + available.map(x => x.key).join(', '));
+    }
+    setHeaderAlerts(lines);
   } catch (err) {
-    box.textContent = 'Alerts unavailable: ' + err.message;
+    if (box) box.textContent = 'Alerts unavailable: ' + err.message;
+    setHeaderAlerts(['Alerts unavailable: ' + err.message]);
   }
 }
 
@@ -2110,7 +2199,7 @@ async function loadMessageRecipients() {
 
     select.innerHTML = users.map((u) => {
       const email = escapeHtml(u.email || '');
-      const label = escapeHtml((u.displayName || u.email || '') + ' (' + (u.email || '') + ')');
+      const label = escapeHtml(u.displayName || u.email || '');
       return '<option value="' + email + '">' + label + '</option>';
     }).join('');
   } catch (err) {
@@ -2132,8 +2221,8 @@ function renderMessagesTable(items, mode) {
 
   tableBody.innerHTML = rows.map((m) => {
     const who = mode === 'sent'
-      ? ('To: ' + escapeHtml(m.toName || m.toEmail || '-'))
-      : ('From: ' + escapeHtml(m.fromName || m.fromEmail || '-'));
+      ? ('To: ' + escapeHtml(m.toName || '-'))
+      : ('From: ' + escapeHtml(m.fromName || '-'));
     const readStatus = m.readAt ? 'Read' : 'Unread';
     const action = mode === 'sent'
       ? '-'
@@ -2161,7 +2250,7 @@ async function loadInboxMessages() {
   if (tableBody) tableBody.innerHTML = '<tr><td colspan="6">Loading inbox...</td></tr>';
 
   try {
-    const response = await authFetch('/api/messages/inbox?limit=100');
+    const response = await authFetch('/api/messages/inbox?limit=1000');
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Failed to load inbox');
     renderMessagesTable(data.items || [], 'inbox');
@@ -2178,7 +2267,7 @@ async function loadSentMessages() {
   if (tableBody) tableBody.innerHTML = '<tr><td colspan="6">Loading sent messages...</td></tr>';
 
   try {
-    const response = await authFetch('/api/messages/sent?limit=100');
+    const response = await authFetch('/api/messages/sent?limit=1000');
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Failed to load sent messages');
     renderMessagesTable(data.items || [], 'sent');

@@ -141,7 +141,7 @@ function showAuthBanner() {
     }
     if (logoutBtn) {
       logoutBtn.disabled = true;
-      logoutBtn.style.display = 'none';
+      logoutBtn.style.display = 'inline-block';
     }
     if (notifyBtn) notifyBtn.disabled = true;
     if (notifyPanel) notifyPanel.hidden = true;
