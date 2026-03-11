@@ -1,6 +1,10 @@
 {
   "tabs": [
     {
+      "name": "roster",
+      "url": "https://docs.google.com/spreadsheets/d/e/2PACX-1vR6_40O35zd-9GMo_nTg5KS76Svzt1P8ZKrfBQwPAtLloGFtpE1r4JBP3t-F-meLlDKCpvWzZkhMlOb/pub?output=csv&gid=757275616"
+    },
+    {
       "name": "disciplinary_forms",
       "url": "https://docs.google.com/spreadsheets/d/e/2PACX-1vS4seHseWTG0lk0IBKCetQqz2elv2_QRVtFRaCbJIMbONhvsixRjc7VrERdyaW2tqUv6ZUfIA-4EztK/pub?output=csv&gid=10995956"
     },
@@ -10,5 +14,103 @@
     }
   ],
   "autoSyncOnLoad": true,
-  "lastSync": null
+  "launchTabsOnLogin": true,
+  "launchTabNames": [
+    "roster",
+    "training_records",
+    "discipline_records"
+  ],
+  "lastSync": {
+    "at": "2026-03-11T04:30:02.961Z",
+    "ok": true,
+    "summary": {
+      "total": 3,
+      "ok": 3,
+      "failed": 0
+    },
+    "result": [
+      {
+        "name": "roster",
+        "ok": true,
+        "rows": 28,
+        "parsedRows": 29,
+        "headers": [
+          "Officer_ID",
+          "RP_Name",
+          "Discord_Name",
+          "FiveM_Name",
+          "Imperial_Name",
+          "Imperial_ID",
+          "Callsign",
+          "Badge_Number",
+          "Rank",
+          "Division",
+          "Sub Division_1",
+          "Sub Division_2",
+          "Supervisor",
+          "Status",
+          "Activity_Status",
+          "Hire_Date",
+          "Notes_Flag",
+          "Discipline_Flag",
+          "Created_Date",
+          "Last_Updated"
+        ],
+        "sourceUrl": "https://docs.google.com/spreadsheets/d/e/2PACX-1vR6_40O35zd-9GMo_nTg5KS76Svzt1P8ZKrfBQwPAtLloGFtpE1r4JBP3t-F-meLlDKCpvWzZkhMlOb/pub?output=csv&gid=757275616",
+        "note": "Roster replaced from sheet"
+      },
+      {
+        "name": "disciplinary_forms",
+        "ok": true,
+        "rows": 1,
+        "headers": [
+          "Timestamp",
+          "Officer Name",
+          "Badge Number",
+          "Rank",
+          "Division",
+          "Type of Violation",
+          "Summary of Incident",
+          "Location of Incident",
+          "Discipline Type",
+          "Days Of Suspension of issued",
+          "Effective Date",
+          "Date of Incident",
+          "Date Submitted",
+          "Supervisor Name",
+          "Supervisor Rank",
+          "Notes"
+        ],
+        "sourceUrl": "https://docs.google.com/spreadsheets/d/e/2PACX-1vS4seHseWTG0lk0IBKCetQqz2elv2_QRVtFRaCbJIMbONhvsixRjc7VrERdyaW2tqUv6ZUfIA-4EztK/pub?output=csv&gid=10995956"
+      },
+      {
+        "name": "cadet_evaluations",
+        "ok": true,
+        "rows": 1,
+        "headers": [
+          "Timestamp",
+          "cadet name",
+          "Date of Training",
+          "Field Training Officer (FTO)",
+          "Basic CAD Knowledge",
+          "comments",
+          "Ability to Operate AI Pullover through ERS",
+          "Comments",
+          "Civilian Interaction",
+          "Ability to Use Proper Radio Callouts",
+          "Pursuit and PIT Application",
+          "Division",
+          "Callsign",
+          "Badge Number",
+          "FTO Notes",
+          "I certify that this evaluation is accurate and completed to the best of my ability.",
+          "View Report",
+          "Approval Status",
+          "Approved By",
+          "Approval Date"
+        ],
+        "sourceUrl": "https://docs.google.com/spreadsheets/d/e/2PACX-1vR6_40O35zd-9GMo_nTg5KS76Svzt1P8ZKrfBQwPAtLloGFtpE1r4JBP3t-F-meLlDKCpvWzZkhMlOb/pub?output=csv&gid=1513386776"
+      }
+    ]
+  }
 }

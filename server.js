@@ -34,6 +34,9 @@ const SESSIONS_FILE = path.join(DATA_DIR, 'sessions.json');
 const REPORT_APPROVALS_FILE = path.join(DATA_DIR, 'report_approvals.json');
 const REPORTS_CONFIG_FILE = path.join(DATA_DIR, 'reports-config.json');
 const INTERNAL_MESSAGES_FILE = path.join(DATA_DIR, 'internal_mailbox.json');
+const DISCUSSIONS_FILE = path.join(DATA_DIR, 'discussions.json');
+const ADMIN_CHAT_FILE = path.join(DATA_DIR, 'admin_chat.json');
+const CALENDAR_EVENTS_FILE = path.join(DATA_DIR, 'calendar_events.json');
 const ROLE_OVERRIDES_FILE = path.join(DATA_DIR, 'role_overrides.json');
 const FTO_FILE = path.join(DATA_DIR, 'fto.json');
 const HARDSET_DEFAULT_ROSTER_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR6_40O35zd-9GMo_nTg5KS76Svzt1P8ZKrfBQwPAtLloGFtpE1r4JBP3t-F-meLlDKCpvWzZkhMlOb/pub?output=csv&gid=757275616';
@@ -57,6 +60,9 @@ const INTERNAL_DATA_FILES = new Set([
   'sessions.json',
   'report_approvals.json',
   'internal_mailbox.json',
+  'discussions.json',
+  'admin_chat.json',
+  'calendar_events.json',
   'role_overrides.json',
   'fto.json'
 ]);
@@ -594,6 +600,30 @@ function saveInternalMessages(items) {
   saveJsonFile(INTERNAL_MESSAGES_FILE, Array.isArray(items) ? items : []);
 }
 
+function loadDiscussionMessages() {
+  return loadJsonFile(DISCUSSIONS_FILE, []);
+}
+
+function saveDiscussionMessages(items) {
+  saveJsonFile(DISCUSSIONS_FILE, Array.isArray(items) ? items : []);
+}
+
+function loadAdminChatMessages() {
+  return loadJsonFile(ADMIN_CHAT_FILE, []);
+}
+
+function saveAdminChatMessages(items) {
+  saveJsonFile(ADMIN_CHAT_FILE, Array.isArray(items) ? items : []);
+}
+
+function loadCalendarEvents() {
+  return loadJsonFile(CALENDAR_EVENTS_FILE, []);
+}
+
+function saveCalendarEvents(items) {
+  saveJsonFile(CALENDAR_EVENTS_FILE, Array.isArray(items) ? items : []);
+}
+
 function readTabRecords(tabName) {
   const safe = sanitizeName(tabName);
   const filePath = path.join(DATA_DIR, safe + '.json');
@@ -604,6 +634,13 @@ function readTabRecords(tabName) {
   } catch (e) {
     return [];
   }
+}
+
+function writeTabRecords(tabName, rows) {
+  const safe = sanitizeName(tabName);
+  if (!safe) return;
+  const filePath = path.join(DATA_DIR, safe + '.json');
+  saveJsonFile(filePath, Array.isArray(rows) ? rows : []);
 }
 
 function listImportedTabNames() {
@@ -750,7 +787,7 @@ function hasLeadershipAccess(auth) {
 
 function hasAdminAccess(auth) {
   const role = String((auth && auth.role) || '');
-  return isPrivilegedRole(role) || isPortalOwnerAuth(auth);
+  return normalizeAccessRole(role) === 'admin' || isPortalOwnerAuth(auth);
 }
 
 function ensureHardsetRosterTab(tabs) {
@@ -2447,6 +2484,254 @@ app.post('/api/reports/:id/approval', requireAuth, (req, res) => {
     res.json({ ok: true, approval: next });
   } catch (err) {
     res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+app.delete('/api/reports/:id', requireAuth, (req, res) => {
+  try {
+    if (!hasLeadershipAccess(req.auth)) {
+      return res.status(403).json({ error: 'Report deletion requires chief, commander, or admin role.' });
+    }
+
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Report id is required.' });
+
+    const built = buildReportItems();
+    const item = built.items.find((x) => String(x && x.id || '') === id);
+    if (!item) return res.status(404).json({ error: 'Report item not found.' });
+
+    const rows = readTabRecords(item.sourceTab);
+    if (!Array.isArray(rows) || !rows.length) {
+      return res.status(404).json({ error: 'Source tab rows not found for report.' });
+    }
+
+    let deleteIdx = -1;
+    for (let idx = 0; idx < rows.length; idx += 1) {
+      const row = rows[idx] || {};
+      const fingerprint = buildReportFingerprint(row, item.type) || (item.sourceTab + '|' + idx);
+      const candidateId = stableHash(item.sourceTab + '|' + fingerprint);
+      if (candidateId === id) {
+        deleteIdx = idx;
+        break;
+      }
+    }
+
+    if (deleteIdx < 0) {
+      return res.status(404).json({ error: 'Unable to map report to source row.' });
+    }
+
+    const nextRows = rows.slice(0, deleteIdx).concat(rows.slice(deleteIdx + 1));
+    writeTabRecords(item.sourceTab, nextRows);
+
+    const approvals = loadReportApprovals().filter((a) => String(a && a.id || '') !== id);
+    saveReportApprovals(approvals);
+
+    return res.json({ ok: true, deletedId: id, sourceTab: item.sourceTab });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+app.get('/api/discussions/messages', requireAuth, (req, res) => {
+  try {
+    const limit = Math.max(1, Math.min(500, Number(req.query.limit || 200)));
+    const rows = loadDiscussionMessages()
+      .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')))
+      .slice(-limit);
+    return res.json({ ok: true, items: rows });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+app.post('/api/discussions/messages', requireAuth, (req, res) => {
+  try {
+    const text = String(req.body && req.body.text || '').trim();
+    if (!text) return res.status(400).json({ error: 'Message text is required.' });
+
+    const rows = loadDiscussionMessages();
+    const item = {
+      id: 'd_' + Date.now() + '_' + crypto.randomBytes(5).toString('hex'),
+      text: text.slice(0, 1500),
+      author: formatUserDisplayName(req.auth),
+      authorEmail: normalizeEmail(req.auth.email),
+      createdAt: new Date().toISOString()
+    };
+    rows.push(item);
+    saveDiscussionMessages(rows);
+    return res.status(201).json({ ok: true, item });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+app.delete('/api/discussions/messages/:id', requireAuth, (req, res) => {
+  try {
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Message id is required.' });
+
+    const email = normalizeEmail(req.auth.email);
+    const canModerate = hasLeadershipAccess(req.auth);
+    const rows = loadDiscussionMessages();
+    const before = rows.length;
+    const filtered = rows.filter((m) => {
+      if (String(m && m.id || '') !== id) return true;
+      if (canModerate) return false;
+      return normalizeEmail(m && m.authorEmail) !== email;
+    });
+
+    if (filtered.length === before) return res.status(404).json({ error: 'Discussion message not found or no permission.' });
+    saveDiscussionMessages(filtered);
+    return res.json({ ok: true, deleted: before - filtered.length });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+app.get('/api/admin-chat/messages', requireAuth, (req, res) => {
+  try {
+    if (!hasAdminAccess(req.auth)) return res.status(403).json({ error: 'Admin access required.' });
+    const limit = Math.max(1, Math.min(500, Number(req.query.limit || 200)));
+    const rows = loadAdminChatMessages()
+      .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')))
+      .slice(-limit);
+    return res.json({ ok: true, items: rows });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+app.post('/api/admin-chat/messages', requireAuth, (req, res) => {
+  try {
+    if (!hasAdminAccess(req.auth)) return res.status(403).json({ error: 'Admin access required.' });
+    const text = String(req.body && req.body.text || '').trim();
+    if (!text) return res.status(400).json({ error: 'Message text is required.' });
+
+    const rows = loadAdminChatMessages();
+    const item = {
+      id: 'a_' + Date.now() + '_' + crypto.randomBytes(5).toString('hex'),
+      text: text.slice(0, 1500),
+      author: formatUserDisplayName(req.auth),
+      authorEmail: normalizeEmail(req.auth.email),
+      createdAt: new Date().toISOString()
+    };
+    rows.push(item);
+    saveAdminChatMessages(rows);
+    return res.status(201).json({ ok: true, item });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+app.delete('/api/admin-chat/messages/:id', requireAuth, (req, res) => {
+  try {
+    if (!hasAdminAccess(req.auth)) return res.status(403).json({ error: 'Admin access required.' });
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Message id is required.' });
+
+    const rows = loadAdminChatMessages();
+    const before = rows.length;
+    const filtered = rows.filter((m) => String(m && m.id || '') !== id);
+    if (filtered.length === before) return res.status(404).json({ error: 'Admin message not found.' });
+    saveAdminChatMessages(filtered);
+    return res.json({ ok: true, deleted: before - filtered.length });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+function parseCalendarEventDateTime(event) {
+  const date = String(event && event.date || '').trim();
+  const time = String(event && event.time || '').trim() || '09:00';
+  if (!date) return null;
+  const iso = date + 'T' + (time.length <= 5 ? (time + ':00') : time);
+  const dt = new Date(iso);
+  if (Number.isNaN(dt.getTime())) return null;
+  return dt;
+}
+
+app.get('/api/calendar/events', requireAuth, (req, res) => {
+  try {
+    const rows = loadCalendarEvents().sort((a, b) => {
+      const ad = parseCalendarEventDateTime(a);
+      const bd = parseCalendarEventDateTime(b);
+      if (!ad && !bd) return 0;
+      if (!ad) return 1;
+      if (!bd) return -1;
+      return ad.getTime() - bd.getTime();
+    });
+    return res.json({ ok: true, items: rows });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+app.post('/api/calendar/events', requireAuth, (req, res) => {
+  try {
+    const date = String(req.body && req.body.date || '').trim();
+    const title = String(req.body && req.body.title || '').trim();
+    const time = String(req.body && req.body.time || '').trim();
+    const note = String(req.body && req.body.note || '').trim();
+    if (!date) return res.status(400).json({ error: 'Event date is required.' });
+    if (!title) return res.status(400).json({ error: 'Event title is required.' });
+
+    const item = {
+      id: 'e_' + Date.now() + '_' + crypto.randomBytes(5).toString('hex'),
+      date,
+      title: title.slice(0, 200),
+      time: time.slice(0, 16),
+      note: note.slice(0, 800),
+      createdAt: new Date().toISOString(),
+      createdBy: formatUserDisplayName(req.auth),
+      createdByEmail: normalizeEmail(req.auth.email)
+    };
+
+    const rows = loadCalendarEvents();
+    rows.push(item);
+    saveCalendarEvents(rows);
+    return res.status(201).json({ ok: true, item });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+app.delete('/api/calendar/events/:id', requireAuth, (req, res) => {
+  try {
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Event id is required.' });
+
+    const email = normalizeEmail(req.auth.email);
+    const canModerate = hasLeadershipAccess(req.auth);
+    const rows = loadCalendarEvents();
+    const before = rows.length;
+    const filtered = rows.filter((ev) => {
+      if (String(ev && ev.id || '') !== id) return true;
+      if (canModerate) return false;
+      return normalizeEmail(ev && ev.createdByEmail) !== email;
+    });
+    if (filtered.length === before) return res.status(404).json({ error: 'Event not found or no permission.' });
+    saveCalendarEvents(filtered);
+    return res.json({ ok: true, deleted: before - filtered.length });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+app.get('/api/calendar/reminders', requireAuth, (req, res) => {
+  try {
+    const windowHours = Math.max(1, Math.min(168, Number(req.query.windowHours || 24)));
+    const now = new Date();
+    const until = new Date(now.getTime() + (windowHours * 60 * 60 * 1000));
+
+    const items = loadCalendarEvents().filter((ev) => {
+      const when = parseCalendarEventDateTime(ev);
+      if (!when) return false;
+      return when >= now && when <= until;
+    }).sort((a, b) => parseCalendarEventDateTime(a).getTime() - parseCalendarEventDateTime(b).getTime());
+
+    return res.json({ ok: true, items, windowHours });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || String(err) });
   }
 });
 

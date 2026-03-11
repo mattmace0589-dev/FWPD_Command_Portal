@@ -66,7 +66,7 @@ function hasLeadershipAccessClient(user) {
 
 function hasAdminAccessClient(user) {
   const role = String((user && user.role) || '');
-  return isPrivilegedRoleClient(role) || isPortalOwnerClient(user);
+  return normalizeAccessRoleClient(role) === 'admin' || isPortalOwnerClient(user);
 }
 
 function normalizeAccessRoleClient(roleText) {
@@ -243,6 +243,9 @@ function applyRuntimeLayoutFixes() {
     let links = Array.from(sidebar.querySelectorAll('a'));
     let messagesLink = null;
     let adminLink = null;
+    let adminChatLink = null;
+    let discussionsLink = null;
+    let calendarLink = null;
     let ftoLink = null;
     links.forEach((link) => {
       const text = String(link.textContent || '').trim().toLowerCase();
@@ -254,6 +257,15 @@ function applyRuntimeLayoutFixes() {
       }
       if (text === 'admin') {
         adminLink = link;
+      }
+      if (text === 'admin chat') {
+        adminChatLink = link;
+      }
+      if (text === 'discussions' || text === 'message board') {
+        discussionsLink = link;
+      }
+      if (text === 'calendar' || text === 'event calendar') {
+        calendarLink = link;
       }
       if (text === 'fto') {
         ftoLink = link;
@@ -268,8 +280,21 @@ function applyRuntimeLayoutFixes() {
       messagesLink = document.createElement('a');
       messagesLink.setAttribute('href', "javascript:loadPage('messages')");
       messagesLink.textContent = 'Messages';
-      if (accountLink) sidebar.insertBefore(messagesLink, accountLink);
-      else sidebar.appendChild(messagesLink);
+      sidebar.appendChild(messagesLink);
+    }
+
+    if (!discussionsLink) {
+      discussionsLink = document.createElement('a');
+      discussionsLink.setAttribute('href', "javascript:loadPage('discussions')");
+      discussionsLink.textContent = 'Discussions';
+      sidebar.appendChild(discussionsLink);
+    }
+
+    if (!calendarLink) {
+      calendarLink = document.createElement('a');
+      calendarLink.setAttribute('href', "javascript:loadPage('calendar')");
+      calendarLink.textContent = 'Calendar';
+      sidebar.appendChild(calendarLink);
     }
 
     const showAdmin = !!currentUser && hasAdminAccessClient(currentUser);
@@ -278,19 +303,27 @@ function applyRuntimeLayoutFixes() {
       adminLink = document.createElement('a');
       adminLink.setAttribute('href', "javascript:loadPage('admin')");
       adminLink.textContent = 'Admin';
-      if (accountLink) sidebar.insertBefore(adminLink, accountLink);
-      else sidebar.appendChild(adminLink);
+      sidebar.appendChild(adminLink);
     }
     if (!showAdmin && adminLink) {
       adminLink.remove();
+    }
+
+    if (showAdmin && !adminChatLink) {
+      adminChatLink = document.createElement('a');
+      adminChatLink.setAttribute('href', "javascript:loadPage('adminchat')");
+      adminChatLink.textContent = 'Admin Chat';
+      sidebar.appendChild(adminChatLink);
+    }
+    if (!showAdmin && adminChatLink) {
+      adminChatLink.remove();
     }
 
     if (showFto && !ftoLink) {
       ftoLink = document.createElement('a');
       ftoLink.setAttribute('href', "javascript:loadPage('fto')");
       ftoLink.textContent = 'FTO';
-      if (accountLink) sidebar.insertBefore(ftoLink, accountLink);
-      else sidebar.appendChild(ftoLink);
+      sidebar.appendChild(ftoLink);
     }
     if (!showFto && ftoLink) {
       ftoLink.remove();
@@ -327,6 +360,7 @@ function startMessagePolling() {
   messagePollTimer = setInterval(() => {
     if (!isLoggedIn()) return;
     loadUnreadMessageCount();
+    checkCalendarReminders();
   }, MESSAGE_POLL_MS);
 }
 
@@ -361,6 +395,9 @@ function renderLoginScreen(statusText = '') {
       <div class="login-cli-header">MDT ACCESS TERMINAL :: AUTHENTICATION</div>
       <div class="login-cli-subheader">SECURE SESSION REQUIRED</div>
       <h2>Command Login</h2>
+      <div class="login-legal-disclaimer">
+        LEGAL DISCLAIMER: THIS PORTAL IS A PRIVATE TOOL FOR A FIVEM ROLEPLAY COMMUNITY AND IS PROVIDED STRICTLY FOR FICTIONAL, ENTERTAINMENT, AND TRAINING-STYLE ROLEPLAY USE. THIS PROJECT IS NOT AFFILIATED WITH, ENDORSED BY, SPONSORED BY, OR CONNECTED TO THE FORT WORTH POLICE DEPARTMENT OR ANY CITY, COUNTY, STATE, FEDERAL, OR OTHER GOVERNMENT AGENCY. ANY NAMES, TERMS, TITLES, OR INSIGNIA-LIKE REFERENCES ARE USED ONLY FOR NON-OFFICIAL ROLEPLAY CONTEXT AND DO NOT REPRESENT REAL-WORLD AUTHORITY, POLICY, OR GOVERNMENT ACTION.
+      </div>
       <p>Only users listed in <b>Command_Users</b> can create accounts and log in.</p>
       <div style="font-size:12px;opacity:.85;margin-bottom:8px;">Build: ${APP_BUILD}</div>
 
@@ -531,6 +568,7 @@ async function refreshAuthSession() {
   }
 
   await loadUnreadMessageCount();
+  await checkCalendarReminders();
   startMessagePolling();
 
   // On initial authenticated load, land on dashboard.
@@ -832,6 +870,112 @@ if (sentBtn) sentBtn.addEventListener('click', loadSentMessages);
 
 loadMessageRecipients();
 loadInboxMessages();
+
+}
+
+if(page === "discussions"){
+
+document.getElementById("content").innerHTML = `
+<h2>Discussions</h2>
+<p>Open command board for all members.</p>
+
+<div style="margin-top:10px;border:1px solid rgba(255,255,255,.2);padding:10px;background:rgba(0,0,0,.15)">
+  <textarea id="discussionText" rows="3" placeholder="Post to discussion board" style="width:100%"></textarea>
+  <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
+    <button id="postDiscussionBtn">Post</button>
+    <button id="refreshDiscussionBtn">Refresh</button>
+  </div>
+</div>
+
+<pre id="discussionStatus" style="margin-top:10px;white-space:pre-wrap;background:rgba(0,0,0,.2);padding:10px;border:1px solid rgba(255,255,255,.2)">Loading discussions...</pre>
+
+<div style="margin-top:10px;overflow:auto">
+  <table id="discussionTable">
+    <thead><tr><th>When</th><th>Author</th><th>Message</th><th>Action</th></tr></thead>
+    <tbody></tbody>
+  </table>
+</div>
+`;
+
+const postBtn = document.getElementById('postDiscussionBtn');
+if (postBtn) postBtn.addEventListener('click', postDiscussionMessage);
+const refreshBtn = document.getElementById('refreshDiscussionBtn');
+if (refreshBtn) refreshBtn.addEventListener('click', loadDiscussionMessages);
+loadDiscussionMessages();
+
+}
+
+if(page === "adminchat"){
+
+if(!hasAdminAccessClient(currentUser)){
+loadPage('dashboard');
+return;
+}
+
+document.getElementById("content").innerHTML = `
+<h2>Admin Chat</h2>
+<p>Private internal channel for admins.</p>
+
+<div style="margin-top:10px;border:1px solid rgba(255,255,255,.2);padding:10px;background:rgba(0,0,0,.15)">
+  <textarea id="adminChatText" rows="3" placeholder="Send admin-only message" style="width:100%"></textarea>
+  <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
+    <button id="postAdminChatBtn">Send</button>
+    <button id="refreshAdminChatBtn">Refresh</button>
+  </div>
+</div>
+
+<pre id="adminChatStatus" style="margin-top:10px;white-space:pre-wrap;background:rgba(0,0,0,.2);padding:10px;border:1px solid rgba(255,255,255,.2)">Loading admin chat...</pre>
+
+<div style="margin-top:10px;overflow:auto">
+  <table id="adminChatTable">
+    <thead><tr><th>When</th><th>Author</th><th>Message</th><th>Action</th></tr></thead>
+    <tbody></tbody>
+  </table>
+</div>
+`;
+
+const postBtn = document.getElementById('postAdminChatBtn');
+if (postBtn) postBtn.addEventListener('click', postAdminChatMessage);
+const refreshBtn = document.getElementById('refreshAdminChatBtn');
+if (refreshBtn) refreshBtn.addEventListener('click', loadAdminChatMessages);
+loadAdminChatMessages();
+
+}
+
+if(page === "calendar"){
+
+document.getElementById("content").innerHTML = `
+<h2>Event Calendar</h2>
+<p>Schedule command events and reminders.</p>
+
+<div style="margin-top:10px;border:1px solid rgba(255,255,255,.2);padding:10px;background:rgba(0,0,0,.15)">
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+    <input id="calendarDate" type="date">
+    <input id="calendarTime" type="time" value="09:00">
+    <input id="calendarTitle" type="text" placeholder="Event title" style="min-width:220px;flex:1">
+  </div>
+  <textarea id="calendarNote" rows="2" placeholder="Optional notes" style="width:100%;margin-top:8px"></textarea>
+  <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
+    <button id="calendarAddBtn">Add Event</button>
+    <button id="calendarRefreshBtn">Refresh</button>
+  </div>
+</div>
+
+<pre id="calendarStatus" style="margin-top:10px;white-space:pre-wrap;background:rgba(0,0,0,.2);padding:10px;border:1px solid rgba(255,255,255,.2)">Loading events...</pre>
+
+<div style="margin-top:10px;overflow:auto">
+  <table id="calendarTable">
+    <thead><tr><th>Date</th><th>Time</th><th>Event</th><th>Notes</th><th>By</th><th>Action</th></tr></thead>
+    <tbody></tbody>
+  </table>
+</div>
+`;
+
+const addBtn = document.getElementById('calendarAddBtn');
+if (addBtn) addBtn.addEventListener('click', addCalendarEvent);
+const refreshBtn = document.getElementById('calendarRefreshBtn');
+if (refreshBtn) refreshBtn.addEventListener('click', loadCalendarEvents);
+loadCalendarEvents();
 
 }
 
@@ -1934,17 +2078,20 @@ function renderReportProfile(item) {
   };
 
   const canApprove = reportCanBeApproved(item);
+  const canDelete = !!currentUser && hasLeadershipAccessClient(currentUser);
   const actionsHtml = canApprove
     ? '<button id="reportApproveBtn">Approve</button> ' +
       '<button id="reportDenyBtn">Deny</button> ' +
       '<button id="reportResetBtn">Reset</button>'
     : '<span style="opacity:.85">No approval actions for this report type.</span>';
+  const deleteHtml = canDelete ? '<button id="reportDeleteBtn">Delete Report</button>' : '';
 
   document.getElementById('content').innerHTML = `
     <h2>Report Profile</h2>
     <div style="margin:8px 0 16px 0;display:flex;gap:8px;flex-wrap:wrap;">
       <button id="reportBackBtn">Back to Reports</button>
       ${actionsHtml}
+      ${deleteHtml}
     </div>
 
     <p><b>Type:</b> ${escapeHtml(item.type || '-')}</p>
@@ -1979,6 +2126,14 @@ function renderReportProfile(item) {
     });
     if (resetBtn) resetBtn.addEventListener('click', async () => {
       await setReportApproval(item.id, 'pending');
+      loadPage('reports');
+    });
+  }
+
+  if (canDelete) {
+    const deleteBtn = document.getElementById('reportDeleteBtn');
+    if (deleteBtn) deleteBtn.addEventListener('click', async () => {
+      await deleteReportItem(item.id);
       loadPage('reports');
     });
   }
@@ -2018,12 +2173,14 @@ async function loadReportItems() {
 
     tableBody.innerHTML = filteredItems.map((item) => {
       const canApprove = reportCanBeApproved(item);
+      const canDelete = !!currentUser && hasLeadershipAccessClient(currentUser);
       const statusText = escapeHtml(item.approvalStatus || 'pending');
       const actionButtons = canApprove
         ? '<button onclick="setReportApproval(\'' + escapeHtml(item.id) + '\',\'approved\')">Approve</button> ' +
           '<button onclick="setReportApproval(\'' + escapeHtml(item.id) + '\',\'denied\')">Deny</button> ' +
           '<button onclick="setReportApproval(\'' + escapeHtml(item.id) + '\',\'pending\')">Reset</button>'
         : '-';
+      const deleteButton = canDelete ? (' <button onclick="deleteReportItem(\'' + escapeHtml(item.id) + '\')">Delete</button>') : '';
 
       return '<tr>' +
         '<td>' + escapeHtml(item.type) + '</td>' +
@@ -2034,7 +2191,7 @@ async function loadReportItems() {
         '<td>' + statusText + '</td>' +
         '<td>' + escapeHtml(item.approvedBy || '-') + '</td>' +
         '<td>' + escapeHtml(formatDateTime(item.approvedAt || '')) + '</td>' +
-        '<td>' + actionButtons + '</td>' +
+        '<td>' + actionButtons + deleteButton + '</td>' +
         '</tr>';
     }).join('');
 
@@ -2064,6 +2221,248 @@ async function setReportApproval(reportId, status) {
     await loadReportItems();
   } catch (err) {
     alert('Approval update failed: ' + err.message);
+  }
+}
+
+async function deleteReportItem(reportId) {
+  const id = String(reportId || '').trim();
+  if (!id) return;
+  if (!confirm('Delete this report row from source data?')) return;
+  try {
+    const response = await authFetch('/api/reports/' + encodeURIComponent(id), { method: 'DELETE' });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Delete failed');
+    await loadReportsSummary();
+    await loadReportItems();
+  } catch (err) {
+    alert('Report delete failed: ' + err.message);
+  }
+}
+
+async function loadDiscussionMessages() {
+  const body = document.querySelector('#discussionTable tbody');
+  const status = document.getElementById('discussionStatus');
+  if (!body) return;
+  body.innerHTML = '<tr><td colspan="4">Loading...</td></tr>';
+  try {
+    const response = await authFetch('/api/discussions/messages?limit=250');
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Failed to load discussion board');
+    const rows = Array.isArray(data.items) ? data.items : [];
+    if (!rows.length) {
+      body.innerHTML = '<tr><td colspan="4">No discussion messages yet.</td></tr>';
+      if (status) status.textContent = 'No discussion messages yet.';
+      return;
+    }
+    body.innerHTML = rows.map((m) => {
+      const canDelete = hasLeadershipAccessClient(currentUser) || normalizeEmailClient(currentUser && currentUser.email) === normalizeEmailClient(m.authorEmail);
+      const action = canDelete ? ('<button onclick="deleteDiscussionMessage(\'' + escapeHtml(m.id) + '\')">Delete</button>') : '-';
+      return '<tr>' +
+        '<td>' + escapeHtml(formatDateTime(m.createdAt || '')) + '</td>' +
+        '<td>' + escapeHtml(m.author || '-') + '</td>' +
+        '<td>' + escapeHtml(m.text || '-') + '</td>' +
+        '<td>' + action + '</td>' +
+      '</tr>';
+    }).join('');
+    if (status) status.textContent = 'Discussion messages: ' + rows.length;
+  } catch (err) {
+    body.innerHTML = '<tr><td colspan="4">' + escapeHtml(err.message) + '</td></tr>';
+    if (status) status.textContent = 'Discussion load failed: ' + err.message;
+  }
+}
+
+async function postDiscussionMessage() {
+  const input = document.getElementById('discussionText');
+  const status = document.getElementById('discussionStatus');
+  const text = String((input && input.value) || '').trim();
+  if (!text) {
+    if (status) status.textContent = 'Enter a message first.';
+    return;
+  }
+  try {
+    const response = await authFetch('/api/discussions/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Post failed');
+    if (input) input.value = '';
+    await loadDiscussionMessages();
+  } catch (err) {
+    if (status) status.textContent = 'Post failed: ' + err.message;
+  }
+}
+
+async function deleteDiscussionMessage(id) {
+  try {
+    const response = await authFetch('/api/discussions/messages/' + encodeURIComponent(String(id || '')), { method: 'DELETE' });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Delete failed');
+    await loadDiscussionMessages();
+  } catch (err) {
+    alert('Discussion delete failed: ' + err.message);
+  }
+}
+
+async function loadAdminChatMessages() {
+  const body = document.querySelector('#adminChatTable tbody');
+  const status = document.getElementById('adminChatStatus');
+  if (!body) return;
+  body.innerHTML = '<tr><td colspan="4">Loading...</td></tr>';
+  try {
+    const response = await authFetch('/api/admin-chat/messages?limit=250');
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Failed to load admin chat');
+    const rows = Array.isArray(data.items) ? data.items : [];
+    if (!rows.length) {
+      body.innerHTML = '<tr><td colspan="4">No admin chat messages yet.</td></tr>';
+      if (status) status.textContent = 'No admin chat messages yet.';
+      return;
+    }
+    body.innerHTML = rows.map((m) => {
+      return '<tr>' +
+        '<td>' + escapeHtml(formatDateTime(m.createdAt || '')) + '</td>' +
+        '<td>' + escapeHtml(m.author || '-') + '</td>' +
+        '<td>' + escapeHtml(m.text || '-') + '</td>' +
+        '<td><button onclick="deleteAdminChatMessage(\'' + escapeHtml(m.id) + '\')">Delete</button></td>' +
+      '</tr>';
+    }).join('');
+    if (status) status.textContent = 'Admin chat messages: ' + rows.length;
+  } catch (err) {
+    body.innerHTML = '<tr><td colspan="4">' + escapeHtml(err.message) + '</td></tr>';
+    if (status) status.textContent = 'Admin chat load failed: ' + err.message;
+  }
+}
+
+async function postAdminChatMessage() {
+  const input = document.getElementById('adminChatText');
+  const status = document.getElementById('adminChatStatus');
+  const text = String((input && input.value) || '').trim();
+  if (!text) {
+    if (status) status.textContent = 'Enter a message first.';
+    return;
+  }
+  try {
+    const response = await authFetch('/api/admin-chat/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Send failed');
+    if (input) input.value = '';
+    await loadAdminChatMessages();
+  } catch (err) {
+    if (status) status.textContent = 'Send failed: ' + err.message;
+  }
+}
+
+async function deleteAdminChatMessage(id) {
+  try {
+    const response = await authFetch('/api/admin-chat/messages/' + encodeURIComponent(String(id || '')), { method: 'DELETE' });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Delete failed');
+    await loadAdminChatMessages();
+  } catch (err) {
+    alert('Admin chat delete failed: ' + err.message);
+  }
+}
+
+async function loadCalendarEvents() {
+  const body = document.querySelector('#calendarTable tbody');
+  const status = document.getElementById('calendarStatus');
+  if (!body) return;
+  body.innerHTML = '<tr><td colspan="6">Loading...</td></tr>';
+  try {
+    const response = await authFetch('/api/calendar/events');
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Failed to load calendar');
+    const rows = Array.isArray(data.items) ? data.items : [];
+    if (!rows.length) {
+      body.innerHTML = '<tr><td colspan="6">No events scheduled.</td></tr>';
+      if (status) status.textContent = 'No events scheduled.';
+      return;
+    }
+    body.innerHTML = rows.map((ev) => {
+      const canDelete = hasLeadershipAccessClient(currentUser) || normalizeEmailClient(currentUser && currentUser.email) === normalizeEmailClient(ev.createdByEmail);
+      const action = canDelete ? ('<button onclick="deleteCalendarEvent(\'' + escapeHtml(ev.id) + '\')">Delete</button>') : '-';
+      return '<tr>' +
+        '<td>' + escapeHtml(ev.date || '-') + '</td>' +
+        '<td>' + escapeHtml(ev.time || '-') + '</td>' +
+        '<td>' + escapeHtml(ev.title || '-') + '</td>' +
+        '<td>' + escapeHtml(ev.note || '-') + '</td>' +
+        '<td>' + escapeHtml(ev.createdBy || '-') + '</td>' +
+        '<td>' + action + '</td>' +
+      '</tr>';
+    }).join('');
+    if (status) status.textContent = 'Scheduled events: ' + rows.length;
+  } catch (err) {
+    body.innerHTML = '<tr><td colspan="6">' + escapeHtml(err.message) + '</td></tr>';
+    if (status) status.textContent = 'Calendar load failed: ' + err.message;
+  }
+}
+
+async function addCalendarEvent() {
+  const date = String((document.getElementById('calendarDate') || {}).value || '').trim();
+  const time = String((document.getElementById('calendarTime') || {}).value || '').trim();
+  const title = String((document.getElementById('calendarTitle') || {}).value || '').trim();
+  const note = String((document.getElementById('calendarNote') || {}).value || '').trim();
+  const status = document.getElementById('calendarStatus');
+  try {
+    const response = await authFetch('/api/calendar/events', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date, time, title, note })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Add event failed');
+    const titleEl = document.getElementById('calendarTitle');
+    const noteEl = document.getElementById('calendarNote');
+    if (titleEl) titleEl.value = '';
+    if (noteEl) noteEl.value = '';
+    await loadCalendarEvents();
+    await checkCalendarReminders();
+  } catch (err) {
+    if (status) status.textContent = 'Add event failed: ' + err.message;
+  }
+}
+
+async function deleteCalendarEvent(id) {
+  try {
+    const response = await authFetch('/api/calendar/events/' + encodeURIComponent(String(id || '')), { method: 'DELETE' });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Delete failed');
+    await loadCalendarEvents();
+  } catch (err) {
+    alert('Calendar delete failed: ' + err.message);
+  }
+}
+
+async function checkCalendarReminders() {
+  if (!isLoggedIn()) return;
+  const key = 'fwpd_calendar_reminded_ids';
+  let reminded = [];
+  try {
+    reminded = JSON.parse(sessionStorage.getItem(key) || '[]');
+    if (!Array.isArray(reminded)) reminded = [];
+  } catch (e) {
+    reminded = [];
+  }
+
+  try {
+    const response = await authFetch('/api/calendar/reminders?windowHours=24');
+    const data = await response.json();
+    if (!response.ok) return;
+    const items = Array.isArray(data.items) ? data.items : [];
+    const unseen = items.filter((ev) => !reminded.includes(String(ev.id || '')));
+    if (!unseen.length) return;
+    const lines = unseen.slice(0, 3).map((ev) => (ev.date || '?') + ' ' + (ev.time || '') + ' - ' + (ev.title || 'Event'));
+    alert('Upcoming event reminder:\n' + lines.join('\n'));
+    reminded = reminded.concat(unseen.map((ev) => String(ev.id || '')));
+    sessionStorage.setItem(key, JSON.stringify(Array.from(new Set(reminded)).slice(-300)));
+  } catch (e) {
+    // Silent by design.
   }
 }
 
