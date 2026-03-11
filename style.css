@@ -113,18 +113,28 @@ body::after {
     radial-gradient(circle at 40% 35%, rgba(255, 230, 170, 0.22), rgba(226, 184, 87, 0.18) 38%, rgba(226, 184, 87, 0.09) 62%, rgba(0, 0, 0, 0.18) 100%);
   box-shadow: 0 10px 22px rgba(0, 0, 0, 0.38), 0 0 0 4px rgba(226, 184, 87, 0.18), inset 0 0 0 1.5px rgba(255, 255, 255, 0.13);
 }
+.logoRight {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  border: 3px solid #d4af37;
+  background: #d4af37;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.18);
+}
 .logoLeft {
   display: flex;
   justify-content: center;
   align-items: center;
-  width: 147px;
-  height: 147px;
+  width: 120px;
+  height: 120px;
   border-radius: 50%;
-  border: 3px solid #e2b857;
-  background:
-    radial-gradient(circle at 35% 30%, rgba(255, 230, 170, 0.22), rgba(226, 184, 87, 0.18) 38%, rgba(226, 184, 87, 0.09) 62%, rgba(0, 0, 0, 0.18) 100%);
-  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.38), 0 0 0 4px rgba(226, 184, 87, 0.18), inset 0 0 0 1.5px rgba(255, 255, 255, 0.13);
-
+  border: 3px solid #d4af37;
+  background: #d4af37;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.18);
+}
 .header img {
   width: 74px;
   height: 74px;
@@ -135,15 +145,16 @@ body::after {
 
 .header-tools {
   position: absolute;
-  right: 212px;
+  right: 140px;
   bottom: 0;
   transform: none;
   display: flex;
-  gap: 8px;
+  gap: 18px;
   align-items: flex-end;
   z-index: 30;
   pointer-events: auto;
   padding-bottom: 10px;
+}
 }
 
 .header-tool-btn {
@@ -190,8 +201,10 @@ body::after {
   justify-content: center;
 }
 
-    width: 110px;
-    height: 110px;
+    width: 100px;
+    height: 100px;
+    object-fit: contain;
+    object-position: center;
     display: block;
     margin: 0 auto;
   line-height: 1;
@@ -199,8 +212,8 @@ body::after {
 
 .tool-count {
   position: absolute;
-  top: -5px;
-  right: -5px;
+  top: -7px;
+  right: -12px;
   min-width: 17px;
   height: 17px;
   padding: 0 4px;
@@ -233,12 +246,12 @@ body::after {
 
 .title {
   font-family: 'Barlow Condensed', 'Rajdhani', sans-serif;
-  font-size: clamp(29px, 4vw, 46px);
+  font-size: clamp(38px, 6vw, 62px);
   letter-spacing: 4px;
   text-transform: uppercase;
   text-align: center;
   line-height: 1.02;
-  color: #e2b857;
+  color: #d4af37;
   text-shadow: 0 8px 18px rgba(0, 0, 0, 0.62), 0 0 20px rgba(0, 0, 0, 0.42);
 }
 
@@ -247,8 +260,9 @@ body::after {
   font-family: 'Space Mono', 'Consolas', monospace;
   font-size: 12px;
   letter-spacing: 0.5px;
-  color: #e2b857;
-  opacity: 0.96;
+  color: #bfa14a;
+  font-size: 18px;
+  opacity: 0.92;
 }
 
 .container {
@@ -309,17 +323,18 @@ body::after {
 
 .sidebar-build-tag {
   margin-top: auto;
+  margin-top: auto;
   margin-bottom: 6px;
-  padding: 8px 10px;
-  border: 1px solid rgba(243, 188, 64, 0.35);
-  border-radius: 8px;
-  background: rgba(5, 22, 47, 0.72);
-  font-family: 'Space Mono', 'Consolas', monospace;
-  font-size: 11px;
-  letter-spacing: 0.5px;
-  color: #f1cd79;
-  text-align: center;
-}
+  padding: 2px 6px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  font-size: 10px;
+  letter-spacing: 0.2px;
+  color: #bfa14a;
+  opacity: 0.65;
+  text-align: right;
+  width: 100%;
 
 .content {
   flex: 1;
