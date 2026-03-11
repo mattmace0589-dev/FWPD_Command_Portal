@@ -267,31 +267,19 @@ function applyRuntimeLayoutFixes() {
       if (text === 'sheet tabs') {
         link.remove();
       }
-      if (text.startsWith('messages')) {
-        messagesLink = link;
-      }
-      if (text === 'admin') {
-        adminLink = link;
-      }
-      if (text === 'admin chat') {
-        adminChatLink = link;
-      }
-      if (text === 'discussions' || text === 'message board' || text === 'chat room' || text === 'chat') {
-        discussionsLink = link;
-      }
-      if (text === 'calendar' || text === 'event calendar') {
-        calendarLink = link;
-      }
-      if (text === 'fto') {
-        ftoLink = link;
-      }
-      if (text === 'promotion recommendations') {
-        promotionRecLink = link;
-      }
-      if (text === 'high command approval') {
-        highCommandApprovalLink = link;
-      }
+      if (text.startsWith('messages')) messagesLink = link;
+      if (text === 'admin') adminLink = link;
+      if (text === 'admin chat') adminChatLink = link;
+      if (text === 'discussions' || text === 'message board' || text === 'chat room' || text === 'chat') discussionsLink = link;
+      if (text === 'calendar' || text === 'event calendar') calendarLink = link;
+      if (text === 'fto') ftoLink = link;
+      if (text === 'promotion recommendations') promotionRecLink = link;
+      if (text === 'high command approval') highCommandApprovalLink = link;
     });
+
+    // Remove all admin/fto/promotion/high command links from sidebar for reordering
+    [adminLink, adminChatLink, ftoLink, promotionRecLink, highCommandApprovalLink].forEach(link => { if (link) link.remove(); });
+
 
     links = Array.from(sidebar.querySelectorAll('a'));
     const accountLink = links.find((link) => String(link.textContent || '').trim().toLowerCase() === 'account');
@@ -320,6 +308,15 @@ function applyRuntimeLayoutFixes() {
       calendarLink.textContent = 'Calendar';
       sidebar.appendChild(calendarLink);
     }
+
+    // Insert admin/fto/promotion/high command links directly after calendar
+    let insertAfter = calendarLink;
+    [adminLink, adminChatLink, ftoLink, promotionRecLink, highCommandApprovalLink].forEach(link => {
+      if (link) {
+        sidebar.insertBefore(link, insertAfter.nextSibling);
+        insertAfter = link;
+      }
+    });
 
     const showAdmin = !!currentUser && hasAdminAccessClient(currentUser);
     const showFto = !!currentUser && hasLeadershipAccessClient(currentUser);
@@ -390,13 +387,9 @@ function applyRuntimeLayoutFixes() {
       footer = document.createElement('div');
       footer.id = 'sidebarBuildTag';
       footer.className = 'sidebar-build-tag';
-      sidebar.appendChild(footer);
-    } else {
-      // Move to end if not already last
-      if (sidebar.lastElementChild !== footer) {
-        sidebar.appendChild(footer);
-      }
     }
+    // Always pin build tag to the bottom of the sidebar
+    sidebar.appendChild(footer);
     footer.textContent = 'Build ' + APP_BUILD;
   }
 

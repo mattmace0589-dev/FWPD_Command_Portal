@@ -108,11 +108,22 @@ body::after {
   width: 98px;
   height: 98px;
   border-radius: 50%;
-  border: 2px solid rgba(243, 188, 64, 0.75);
+  border: 3px solid #e2b857;
   background:
-    radial-gradient(circle at 35% 30%, rgba(255, 230, 170, 0.34), rgba(243, 188, 64, 0.2) 30%, rgba(243, 188, 64, 0.08) 58%, rgba(0, 0, 0, 0.2) 100%);
-  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.35), inset 0 0 0 1px rgba(255, 255, 255, 0.15);
+    radial-gradient(circle at 40% 35%, rgba(255, 230, 170, 0.22), rgba(226, 184, 87, 0.18) 38%, rgba(226, 184, 87, 0.09) 62%, rgba(0, 0, 0, 0.18) 100%);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.38), 0 0 0 4px rgba(226, 184, 87, 0.18), inset 0 0 0 1.5px rgba(255, 255, 255, 0.13);
 }
+.logoLeft {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 147px;
+  height: 147px;
+  border-radius: 50%;
+  border: 3px solid #e2b857;
+  background:
+    radial-gradient(circle at 35% 30%, rgba(255, 230, 170, 0.22), rgba(226, 184, 87, 0.18) 38%, rgba(226, 184, 87, 0.09) 62%, rgba(0, 0, 0, 0.18) 100%);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.38), 0 0 0 4px rgba(226, 184, 87, 0.18), inset 0 0 0 1.5px rgba(255, 255, 255, 0.13);
 
 .header img {
   width: 74px;
@@ -125,13 +136,14 @@ body::after {
 .header-tools {
   position: absolute;
   right: 212px;
-  top: 50%;
-  transform: translateY(-50%);
+  bottom: 0;
+  transform: none;
   display: flex;
   gap: 8px;
-  align-items: center;
+  align-items: flex-end;
   z-index: 30;
   pointer-events: auto;
+  padding-bottom: 10px;
 }
 
 .header-tool-btn {
@@ -178,8 +190,10 @@ body::after {
   justify-content: center;
 }
 
-.tool-icon {
-  font-size: 15px;
+    width: 110px;
+    height: 110px;
+    display: block;
+    margin: 0 auto;
   line-height: 1;
 }
 
@@ -224,7 +238,7 @@ body::after {
   text-transform: uppercase;
   text-align: center;
   line-height: 1.02;
-  color: #f4cb6c;
+  color: #e2b857;
   text-shadow: 0 8px 18px rgba(0, 0, 0, 0.62), 0 0 20px rgba(0, 0, 0, 0.42);
 }
 
@@ -233,7 +247,7 @@ body::after {
   font-family: 'Space Mono', 'Consolas', monospace;
   font-size: 12px;
   letter-spacing: 0.5px;
-  color: #f7df9b;
+  color: #e2b857;
   opacity: 0.96;
 }
 
@@ -507,13 +521,17 @@ pre {
   margin-top: 2px;
 }
 
-.login-legal-disclaimer {
-  float: right;
-  width: min(40%, 410px);
-  margin: 4px 0 12px 14px;
-  padding: 10px 11px;
-  border: 1px solid rgba(255, 117, 117, 0.76);
-  background: linear-gradient(180deg, rgba(68, 0, 0, 0.45), rgba(40, 0, 0, 0.42));
+    margin-bottom: 2px;
+    padding: 2px 6px;
+    border: none;
+    border-radius: 4px;
+    background: none;
+    font-size: 10px;
+    letter-spacing: 0.2px;
+    color: #bda96b;
+    opacity: 0.65;
+    text-align: right;
+    width: 100%;
   color: #ffd3d3;
   font-family: 'Space Mono', 'Consolas', monospace;
   font-size: clamp(11px, 0.9vw, 13px);
