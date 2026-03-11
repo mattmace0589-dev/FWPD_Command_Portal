@@ -80,6 +80,24 @@ body::after {
     linear-gradient(180deg, rgba(5, 20, 43, 0.97), rgba(8, 29, 62, 0.94));
   box-shadow: 0 16px 34px rgba(0, 0, 0, 0.42), inset 0 -1px 0 rgba(142, 215, 255, 0.2);
   animation: headerDrop 420ms ease-out;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.header::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 16% 50%, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0) 26%),
+    linear-gradient(90deg, rgba(0, 43, 127, 0.45) 0 33%, rgba(255, 255, 255, 0.12) 33% 66%, rgba(191, 10, 48, 0.38) 66% 100%);
+  z-index: 0;
+}
+
+.header > * {
+  position: relative;
+  z-index: 1;
 }
 
 .logoLeft,
@@ -87,16 +105,21 @@ body::after {
   display: flex;
   justify-content: center;
   align-items: center;
-  width: 86px;
-  height: 86px;
+  width: 98px;
+  height: 98px;
+  border-radius: 50%;
+  border: 2px solid rgba(243, 188, 64, 0.75);
+  background:
+    radial-gradient(circle at 35% 30%, rgba(255, 230, 170, 0.34), rgba(243, 188, 64, 0.2) 30%, rgba(243, 188, 64, 0.08) 58%, rgba(0, 0, 0, 0.2) 100%);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.35), inset 0 0 0 1px rgba(255, 255, 255, 0.15);
 }
 
 .header img {
-  width: 80px;
-  height: 80px;
+  width: 74px;
+  height: 74px;
   object-fit: contain;
   object-position: center;
-  filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.38));
+  filter: drop-shadow(0 5px 10px rgba(0, 0, 0, 0.48));
 }
 
 .header-tools {
@@ -196,12 +219,22 @@ body::after {
 
 .title {
   font-family: 'Barlow Condensed', 'Rajdhani', sans-serif;
-  font-size: clamp(30px, 4.4vw, 50px);
+  font-size: clamp(29px, 4vw, 46px);
   letter-spacing: 4px;
   text-transform: uppercase;
   text-align: center;
-  line-height: 1;
-  text-shadow: 0 8px 18px rgba(0, 0, 0, 0.5), 0 0 24px rgba(142, 215, 255, 0.26);
+  line-height: 1.02;
+  color: #f4cb6c;
+  text-shadow: 0 8px 18px rgba(0, 0, 0, 0.62), 0 0 20px rgba(0, 0, 0, 0.42);
+}
+
+.header-datetime-tag {
+  margin-top: 4px;
+  font-family: 'Space Mono', 'Consolas', monospace;
+  font-size: 12px;
+  letter-spacing: 0.5px;
+  color: #f7df9b;
+  opacity: 0.96;
 }
 
 .container {
@@ -214,6 +247,8 @@ body::after {
   width: 246px;
   padding: 12px 10px;
   border-right: 1px solid rgba(142, 215, 255, 0.24);
+  display: flex;
+  flex-direction: column;
   background:
     linear-gradient(180deg, rgba(6, 21, 48, 0.93), rgba(10, 35, 74, 0.88));
 }
@@ -256,6 +291,20 @@ body::after {
   transform: translateX(3px);
   border-color: rgba(243, 188, 64, 0.42);
   background: linear-gradient(90deg, rgba(243, 188, 64, 0.25), rgba(210, 74, 67, 0.1));
+}
+
+.sidebar-build-tag {
+  margin-top: auto;
+  margin-bottom: 6px;
+  padding: 8px 10px;
+  border: 1px solid rgba(243, 188, 64, 0.35);
+  border-radius: 8px;
+  background: rgba(5, 22, 47, 0.72);
+  font-family: 'Space Mono', 'Consolas', monospace;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  color: #f1cd79;
+  text-align: center;
 }
 
 .content {
@@ -328,6 +377,11 @@ tr:hover td {
 
 #rosterTable td.actions-cell {
   overflow: visible;
+}
+
+#calendarTable th,
+#calendarTable td {
+  text-align: left;
 }
 
 button,
@@ -573,6 +627,45 @@ pre {
   opacity: 0.88;
 }
 
+.status-pill {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+}
+
+.status-pill.status-under_review {
+  color: #ffe7b0;
+  background: rgba(243, 188, 64, 0.18);
+  border-color: rgba(243, 188, 64, 0.48);
+}
+
+.status-pill.status-approved {
+  color: #d5ffe5;
+  background: rgba(66, 179, 104, 0.2);
+  border-color: rgba(66, 179, 104, 0.5);
+}
+
+.status-pill.status-denied {
+  color: #ffd8d8;
+  background: rgba(210, 74, 67, 0.24);
+  border-color: rgba(210, 74, 67, 0.54);
+}
+
+.approval-actions-cell {
+  min-width: 220px;
+}
+
+.approval-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
 @keyframes headerDrop {
   from {
     opacity: 0;
@@ -633,13 +726,13 @@ pre {
 
   .logoLeft,
   .logoRight {
-    width: 66px;
-    height: 66px;
+    width: 70px;
+    height: 70px;
   }
 
   .header img {
-    width: 64px;
-    height: 64px;
+    width: 54px;
+    height: 54px;
   }
 
   .title {
@@ -691,6 +784,11 @@ pre {
     border-right: none;
     padding: 10px 12px;
     animation: none;
+    margin: 0 4px 0 0;
+  }
+
+  .sidebar-build-tag {
+    display: none;
   }
 
   .sidebar a:hover {

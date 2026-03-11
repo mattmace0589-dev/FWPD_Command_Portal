@@ -37,6 +37,7 @@ const INTERNAL_MESSAGES_FILE = path.join(DATA_DIR, 'internal_mailbox.json');
 const DISCUSSIONS_FILE = path.join(DATA_DIR, 'discussions.json');
 const ADMIN_CHAT_FILE = path.join(DATA_DIR, 'admin_chat.json');
 const CALENDAR_EVENTS_FILE = path.join(DATA_DIR, 'calendar_events.json');
+const PROMOTION_RECOMMENDATIONS_FILE = path.join(DATA_DIR, 'promotion_recommendations.json');
 const ROLE_OVERRIDES_FILE = path.join(DATA_DIR, 'role_overrides.json');
 const FTO_FILE = path.join(DATA_DIR, 'fto.json');
 const HARDSET_DEFAULT_ROSTER_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR6_40O35zd-9GMo_nTg5KS76Svzt1P8ZKrfBQwPAtLloGFtpE1r4JBP3t-F-meLlDKCpvWzZkhMlOb/pub?output=csv&gid=757275616';
@@ -63,6 +64,7 @@ const INTERNAL_DATA_FILES = new Set([
   'discussions.json',
   'admin_chat.json',
   'calendar_events.json',
+  'promotion_recommendations.json',
   'role_overrides.json',
   'fto.json'
 ]);
@@ -624,6 +626,14 @@ function saveCalendarEvents(items) {
   saveJsonFile(CALENDAR_EVENTS_FILE, Array.isArray(items) ? items : []);
 }
 
+function loadPromotionRecommendations() {
+  return loadJsonFile(PROMOTION_RECOMMENDATIONS_FILE, []);
+}
+
+function savePromotionRecommendations(items) {
+  saveJsonFile(PROMOTION_RECOMMENDATIONS_FILE, Array.isArray(items) ? items : []);
+}
+
 function readTabRecords(tabName) {
   const safe = sanitizeName(tabName);
   const filePath = path.join(DATA_DIR, safe + '.json');
@@ -788,6 +798,11 @@ function hasLeadershipAccess(auth) {
 function hasAdminAccess(auth) {
   const role = String((auth && auth.role) || '');
   return normalizeAccessRole(role) === 'admin' || isPortalOwnerAuth(auth);
+}
+
+function hasHighCommandAccess(auth) {
+  const role = normalizeAccessRole(auth && auth.role);
+  return role === 'admin' || role === 'chief' || role === 'commander' || isPortalOwnerAuth(auth);
 }
 
 function ensureHardsetRosterTab(tabs) {
@@ -2025,6 +2040,145 @@ app.post('/api/messages/:id/read', requireAuth, (req, res) => {
     res.json({ ok: true, item: all[idx] });
   } catch (err) {
     res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+app.get('/api/promotions/recommendations', requireAuth, (req, res) => {
+  try {
+    if (!hasHighCommandAccess(req.auth)) {
+      return res.status(403).json({ error: 'High Command access required.' });
+    }
+    const statusFilter = sanitizeName(req.query.status || 'all');
+    let rows = loadPromotionRecommendations();
+    if (statusFilter !== 'all') {
+      rows = rows.filter((x) => sanitizeName(x && x.status) === statusFilter);
+    }
+    rows.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+    return res.json({ ok: true, items: rows });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+app.post('/api/promotions/recommendations', requireAuth, (req, res) => {
+  try {
+    if (!hasHighCommandAccess(req.auth)) {
+      return res.status(403).json({ error: 'High Command access required.' });
+    }
+    const officerId = String(req.body && req.body.officerId || '').trim();
+    const officerName = String(req.body && req.body.officerName || '').trim();
+    const currentRank = String(req.body && req.body.currentRank || '').trim();
+    const suggestedRank = String(req.body && req.body.suggestedRank || '').trim();
+    const notes = String(req.body && req.body.notes || '').trim();
+    if (!officerId) return res.status(400).json({ error: 'Officer id is required.' });
+    if (!officerName) return res.status(400).json({ error: 'Officer name is required.' });
+    if (!suggestedRank) return res.status(400).json({ error: 'Suggested rank is required.' });
+    if (!notes) return res.status(400).json({ error: 'Notes are required.' });
+
+    const createdAt = new Date().toISOString();
+    const item = {
+      id: 'pr_' + Date.now() + '_' + crypto.randomBytes(5).toString('hex'),
+      officerId,
+      officerName,
+      currentRank,
+      suggestedRank,
+      notes: notes.slice(0, 3000),
+      status: 'under_review',
+      submittedBy: formatUserDisplayName(req.auth),
+      submittedByEmail: normalizeEmail(req.auth.email),
+      createdAt,
+      updatedAt: createdAt,
+      reviewedBy: '',
+      reviewedByEmail: '',
+      reviewedAt: ''
+    };
+
+    const rows = loadPromotionRecommendations();
+    rows.push(item);
+    savePromotionRecommendations(rows);
+
+    // Notify submitter that recommendation is under review.
+    const mailbox = loadInternalMessages();
+    mailbox.push({
+      id: 'msg_' + Date.now() + '_' + crypto.randomBytes(5).toString('hex'),
+      fromEmail: 'noreply@fwpd.portal.local',
+      fromName: 'High Command Workflow',
+      toEmail: normalizeEmail(req.auth.email),
+      toName: formatUserDisplayName(req.auth),
+      subject: 'Promotion Recommendation Under Review',
+      body: 'Your recommendation for ' + officerName + ' (' + suggestedRank + ') has been submitted and is currently under review by High Command.',
+      createdAt,
+      readAt: ''
+    });
+    saveInternalMessages(mailbox);
+
+    return res.status(201).json({ ok: true, item });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+app.post('/api/promotions/recommendations/:id/status', requireAuth, (req, res) => {
+  try {
+    if (!hasHighCommandAccess(req.auth)) {
+      return res.status(403).json({ error: 'High Command access required.' });
+    }
+    const id = String(req.params.id || '').trim();
+    const status = sanitizeName(req.body && req.body.status);
+    if (!id) return res.status(400).json({ error: 'Recommendation id is required.' });
+    if (!['under_review', 'approved', 'denied'].includes(status)) {
+      return res.status(400).json({ error: 'Status must be under_review, approved, or denied.' });
+    }
+
+    const rows = loadPromotionRecommendations();
+    const idx = rows.findIndex((x) => String(x && x.id || '') === id);
+    if (idx < 0) return res.status(404).json({ error: 'Recommendation not found.' });
+
+    rows[idx].status = status;
+    rows[idx].updatedAt = new Date().toISOString();
+    rows[idx].reviewedBy = formatUserDisplayName(req.auth);
+    rows[idx].reviewedByEmail = normalizeEmail(req.auth.email);
+    rows[idx].reviewedAt = rows[idx].updatedAt;
+    savePromotionRecommendations(rows);
+
+    if (status === 'approved' || status === 'denied') {
+      const mailbox = loadInternalMessages();
+      mailbox.push({
+        id: 'msg_' + Date.now() + '_' + crypto.randomBytes(5).toString('hex'),
+        fromEmail: 'noreply@fwpd.portal.local',
+        fromName: 'High Command Workflow',
+        toEmail: normalizeEmail(rows[idx].submittedByEmail),
+        toName: rows[idx].submittedBy || 'Officer',
+        subject: 'Promotion Recommendation ' + (status === 'approved' ? 'Approved' : 'Denied'),
+        body: 'Your recommendation for ' + (rows[idx].officerName || 'the selected officer') + ' has been marked as ' + status + ' by High Command.',
+        createdAt: rows[idx].updatedAt,
+        readAt: ''
+      });
+      saveInternalMessages(mailbox);
+    }
+
+    return res.json({ ok: true, item: rows[idx] });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+app.delete('/api/promotions/recommendations/:id', requireAuth, (req, res) => {
+  try {
+    if (!hasHighCommandAccess(req.auth)) {
+      return res.status(403).json({ error: 'High Command access required.' });
+    }
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Recommendation id is required.' });
+
+    const rows = loadPromotionRecommendations();
+    const before = rows.length;
+    const filtered = rows.filter((x) => String(x && x.id || '') !== id);
+    if (filtered.length === before) return res.status(404).json({ error: 'Recommendation not found.' });
+    savePromotionRecommendations(filtered);
+    return res.json({ ok: true, deleted: before - filtered.length });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || String(err) });
   }
 });
 

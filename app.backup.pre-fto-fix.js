@@ -34,6 +34,7 @@ let dataAutoSyncPromise = null;
 let ftoListLoadToken = 0;
 let headerAlertLines = [];
 let discussionPollTimer = null;
+let headerClockTimer = null;
 
 function formatUserDisplayName(user) {
   const rank = String((user && user.rank) || '').trim();
@@ -259,6 +260,8 @@ function applyRuntimeLayoutFixes() {
     let discussionsLink = null;
     let calendarLink = null;
     let ftoLink = null;
+    let promotionRecLink = null;
+    let highCommandApprovalLink = null;
     links.forEach((link) => {
       const text = String(link.textContent || '').trim().toLowerCase();
       if (text === 'sheet tabs') {
@@ -281,6 +284,12 @@ function applyRuntimeLayoutFixes() {
       }
       if (text === 'fto') {
         ftoLink = link;
+      }
+      if (text === 'promotion recommendations') {
+        promotionRecLink = link;
+      }
+      if (text === 'high command approval') {
+        highCommandApprovalLink = link;
       }
     });
 
@@ -314,6 +323,7 @@ function applyRuntimeLayoutFixes() {
 
     const showAdmin = !!currentUser && hasAdminAccessClient(currentUser);
     const showFto = !!currentUser && hasLeadershipAccessClient(currentUser);
+    const showHighCommand = !!currentUser && hasLeadershipAccessClient(currentUser);
     if (showAdmin && !adminLink) {
       adminLink = document.createElement('a');
       adminLink.setAttribute('href', "javascript:loadPage('admin')");
@@ -344,22 +354,71 @@ function applyRuntimeLayoutFixes() {
       ftoLink.remove();
     }
 
+    if (showHighCommand && !promotionRecLink) {
+      promotionRecLink = document.createElement('a');
+      promotionRecLink.setAttribute('href', "javascript:loadPage('promotion-recommendations')");
+      promotionRecLink.textContent = 'Promotion Recommendations';
+      sidebar.appendChild(promotionRecLink);
+    }
+    if (showHighCommand && promotionRecLink) {
+      promotionRecLink.setAttribute('href', "javascript:loadPage('promotion-recommendations')");
+      promotionRecLink.textContent = 'Promotion Recommendations';
+    }
+    if (!showHighCommand && promotionRecLink) {
+      promotionRecLink.remove();
+    }
+
+    if (showHighCommand && !highCommandApprovalLink) {
+      highCommandApprovalLink = document.createElement('a');
+      highCommandApprovalLink.setAttribute('href', "javascript:loadPage('high-command-approval')");
+      highCommandApprovalLink.textContent = 'High Command Approval';
+      sidebar.appendChild(highCommandApprovalLink);
+    }
+    if (showHighCommand && highCommandApprovalLink) {
+      highCommandApprovalLink.setAttribute('href', "javascript:loadPage('high-command-approval')");
+      highCommandApprovalLink.textContent = 'High Command Approval';
+    }
+    if (!showHighCommand && highCommandApprovalLink) {
+      highCommandApprovalLink.remove();
+    }
+
     const countText = unreadMessageCount > 0 ? ('Messages (' + unreadMessageCount + ')') : 'Messages';
     messagesLink.textContent = countText;
+
+    let footer = document.getElementById('sidebarBuildTag');
+    if (!footer) {
+      footer = document.createElement('div');
+      footer.id = 'sidebarBuildTag';
+      footer.className = 'sidebar-build-tag';
+      sidebar.appendChild(footer);
+    }
+    footer.textContent = 'Build ' + APP_BUILD;
   }
 
   const title = document.querySelector('.title');
   if (title) {
-    let tag = document.getElementById('appBuildTag');
-    if (!tag) {
-      tag = document.createElement('div');
-      tag.id = 'appBuildTag';
-      tag.style.fontSize = '11px';
-      tag.style.opacity = '0.9';
-      tag.style.marginTop = '2px';
-      title.appendChild(tag);
+    let dateTimeTag = document.getElementById('headerDateTimeTag');
+    if (!dateTimeTag) {
+      dateTimeTag = document.createElement('div');
+      dateTimeTag.id = 'headerDateTimeTag';
+      dateTimeTag.className = 'header-datetime-tag';
+      title.appendChild(dateTimeTag);
     }
-    tag.textContent = 'Build ' + APP_BUILD;
+
+    const updateDateTime = () => {
+      const now = new Date();
+      dateTimeTag.textContent = now.toLocaleString('en-US', {
+        month: 'long',
+        day: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    };
+    updateDateTime();
+    if (!headerClockTimer) {
+      headerClockTimer = setInterval(updateDateTime, 30000);
+    }
   }
 }
 
@@ -436,7 +495,6 @@ function renderLoginScreen(statusText = '') {
         </details>
       </div>
       <p>Only users listed in <b>Command_Users</b> can create accounts and log in.</p>
-      <div style="font-size:12px;opacity:.85;margin-bottom:8px;">Build: ${APP_BUILD}</div>
 
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin:10px 0 16px 0;">
         <button id="showLoginPane">Login</button>
@@ -1006,14 +1064,6 @@ document.getElementById("content").innerHTML = `
   </div>
 </div>
 
-<div style="margin-top:10px;border:1px solid rgba(255,255,255,.2);padding:10px;background:rgba(0,0,0,.15)">
-  <b>Display Timezone</b>
-  <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-    <select id="calendarViewTimezone" style="min-width:260px"></select>
-    <span style="font-size:13px;opacity:.88">Calendar times are shown in your selected timezone.</span>
-  </div>
-</div>
-
 <pre id="calendarStatus" style="margin-top:10px;white-space:pre-wrap;background:rgba(0,0,0,.2);padding:10px;border:1px solid rgba(255,255,255,.2)">Loading events...</pre>
 
 <div style="margin-top:10px;overflow:auto">
@@ -1030,12 +1080,102 @@ const addBtn = document.getElementById('calendarAddBtn');
 if (addBtn) addBtn.addEventListener('click', addCalendarEvent);
 const refreshBtn = document.getElementById('calendarRefreshBtn');
 if (refreshBtn) refreshBtn.addEventListener('click', loadCalendarEvents);
-const viewTzEl = document.getElementById('calendarViewTimezone');
-if (viewTzEl) viewTzEl.addEventListener('change', () => {
-  try { localStorage.setItem(CALENDAR_VIEW_TIMEZONE_KEY, viewTzEl.value || DEFAULT_CALENDAR_TIMEZONE); } catch (e) {}
-  loadCalendarEvents();
-});
 loadCalendarEvents();
+
+}
+
+if(page === "promotion-recommendations"){
+
+if(!hasLeadershipAccessClient(currentUser)){
+loadPage('dashboard');
+return;
+}
+
+document.getElementById("content").innerHTML = `
+<h2>Promotion Recommendations</h2>
+<p>Submit a recommendation for High Command review.</p>
+
+<div style="margin-top:10px;border:1px solid rgba(255,255,255,.2);padding:10px;background:rgba(0,0,0,.15)">
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+    <select id="promotionOfficerSelect" style="min-width:300px;flex:1"></select>
+    <select id="promotionSuggestedRank" style="min-width:220px;">
+      <option value="">Suggested Rank...</option>
+      <option value="Officer">Officer</option>
+      <option value="Senior Officer">Senior Officer</option>
+      <option value="Corpral">Corpral</option>
+      <option value="Sergeant">Sergeant</option>
+      <option value="Lieutenant">Lieutenant</option>
+      <option value="Captain">Captain</option>
+      <option value="Commander">Commander</option>
+      <option value="Deputy Chief">Deputy Chief</option>
+      <option value="Assistant Chief">Assistant Chief</option>
+      <option value="Chief">Chief</option>
+    </select>
+  </div>
+  <textarea id="promotionNotes" rows="4" placeholder="Recommendation notes and reasons" style="width:100%;margin-top:8px"></textarea>
+  <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
+    <button id="submitPromotionRecBtn">Submit Recommendation</button>
+    <button id="refreshPromotionRecBtn">Refresh</button>
+  </div>
+</div>
+
+<pre id="promotionRecStatus" style="margin-top:10px;white-space:pre-wrap;background:rgba(0,0,0,.2);padding:10px;border:1px solid rgba(255,255,255,.2)">Loading recommendations...</pre>
+
+<div style="margin-top:10px;overflow:auto">
+  <table id="promotionRecTable">
+    <thead><tr><th>Officer</th><th>Current Rank</th><th>Suggested Rank</th><th>Submitted By</th><th>Date</th><th>Status</th></tr></thead>
+    <tbody></tbody>
+  </table>
+</div>
+`;
+
+const submitBtn = document.getElementById('submitPromotionRecBtn');
+if (submitBtn) submitBtn.addEventListener('click', submitPromotionRecommendation);
+const refreshBtn = document.getElementById('refreshPromotionRecBtn');
+if (refreshBtn) refreshBtn.addEventListener('click', loadPromotionRecommendations);
+
+loadPromotionOfficerOptions();
+loadPromotionRecommendations();
+
+}
+
+if(page === "high-command-approval"){
+
+if(!hasLeadershipAccessClient(currentUser)){
+loadPage('dashboard');
+return;
+}
+
+document.getElementById("content").innerHTML = `
+<h2>High Command Approval</h2>
+<p>Review, approve, deny, or delete promotion recommendations.</p>
+
+<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+  <label>Status</label>
+  <select id="promotionApprovalStatusFilter">
+    <option value="under_review">Under Review</option>
+    <option value="all">All</option>
+    <option value="approved">Approved</option>
+    <option value="denied">Denied</option>
+  </select>
+  <button id="refreshPromotionApprovalBtn">Refresh</button>
+</div>
+
+<pre id="promotionApprovalStatus" style="margin-top:10px;white-space:pre-wrap;background:rgba(0,0,0,.2);padding:10px;border:1px solid rgba(255,255,255,.2)">Loading approval queue...</pre>
+
+<div style="margin-top:10px;overflow:auto">
+  <table id="promotionApprovalTable">
+    <thead><tr><th>Officer</th><th>Current</th><th>Suggested</th><th>Notes</th><th>Submitted By</th><th>Date</th><th>Status</th><th>Actions</th></tr></thead>
+    <tbody></tbody>
+  </table>
+</div>
+`;
+
+const refreshBtn = document.getElementById('refreshPromotionApprovalBtn');
+if (refreshBtn) refreshBtn.addEventListener('click', loadPromotionApprovalQueue);
+const statusFilter = document.getElementById('promotionApprovalStatusFilter');
+if (statusFilter) statusFilter.addEventListener('change', loadPromotionApprovalQueue);
+loadPromotionApprovalQueue();
 
 }
 
@@ -1898,6 +2038,181 @@ async function removeFtoOfficer(officerId) {
   }
 }
 
+async function loadPromotionOfficerOptions() {
+  const select = document.getElementById('promotionOfficerSelect');
+  if (!select) return;
+  select.innerHTML = '<option value="">Loading roster...</option>';
+  try {
+    const response = await fetch('/api/roster');
+    const data = await response.json();
+    if (!response.ok) throw new Error('Failed to load roster');
+    const rows = Array.isArray(data) ? data : [];
+    const options = rows.map((item) => {
+      const id = pickOfficerField(item, ['ID', 'id', 'Officer_ID', 'officer_id']);
+      const name = pickOfficerField(item, ['Name', 'name', 'RP_Name', 'rp_name', 'Officer_Name', 'officer_name']);
+      const rank = pickOfficerField(item, ['Rank', 'rank']) || '-';
+      const callsign = pickOfficerField(item, ['Callsign', 'callsign', 'Call_Sign', 'call_sign']);
+      if (!id) return null;
+      return {
+        id,
+        name: name || '(No Name)',
+        rank,
+        label: (rank ? rank + ' ' : '') + (name || '(No Name)') + (callsign ? ' | ' + callsign : '')
+      };
+    }).filter(Boolean).sort((a, b) => a.label.localeCompare(b.label));
+
+    select.innerHTML = '<option value="">Select officer...</option>';
+    options.forEach((o) => {
+      const opt = document.createElement('option');
+      opt.value = o.id;
+      opt.textContent = o.label;
+      opt.dataset.officerName = o.name;
+      opt.dataset.currentRank = o.rank;
+      select.appendChild(opt);
+    });
+  } catch (err) {
+    select.innerHTML = '<option value="">Roster unavailable</option>';
+  }
+}
+
+async function submitPromotionRecommendation() {
+  const select = document.getElementById('promotionOfficerSelect');
+  const rankEl = document.getElementById('promotionSuggestedRank');
+  const notesEl = document.getElementById('promotionNotes');
+  const status = document.getElementById('promotionRecStatus');
+  const officerId = String((select && select.value) || '').trim();
+  const option = select && select.options ? select.options[select.selectedIndex] : null;
+  const officerName = String((option && option.dataset && option.dataset.officerName) || '').trim();
+  const currentRank = String((option && option.dataset && option.dataset.currentRank) || '').trim();
+  const suggestedRank = String((rankEl && rankEl.value) || '').trim();
+  const notes = String((notesEl && notesEl.value) || '').trim();
+
+  if (!officerId || !officerName || !suggestedRank || !notes) {
+    if (status) status.textContent = 'Select an officer, choose a suggested rank, and enter notes.';
+    return;
+  }
+
+  try {
+    const response = await authFetch('/api/promotions/recommendations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ officerId, officerName, currentRank, suggestedRank, notes })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Submit failed');
+    if (notesEl) notesEl.value = '';
+    if (status) status.textContent = 'Recommendation submitted and marked under review.';
+    await loadPromotionRecommendations();
+  } catch (err) {
+    if (status) status.textContent = 'Submit failed: ' + err.message;
+  }
+}
+
+async function loadPromotionRecommendations() {
+  const body = document.querySelector('#promotionRecTable tbody');
+  const status = document.getElementById('promotionRecStatus');
+  if (!body) return;
+  body.innerHTML = '<tr><td colspan="6">Loading...</td></tr>';
+  try {
+    const response = await authFetch('/api/promotions/recommendations?status=all');
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Failed to load recommendations');
+    const rows = Array.isArray(data.items) ? data.items : [];
+    if (!rows.length) {
+      body.innerHTML = '<tr><td colspan="6">No recommendations submitted yet.</td></tr>';
+      if (status) status.textContent = 'No recommendations submitted yet.';
+      return;
+    }
+    body.innerHTML = rows.map((r) => {
+      const statusClass = 'status-' + sanitizeName(r.status || 'under_review');
+      return '<tr>' +
+        '<td>' + escapeHtml(r.officerName || '-') + '</td>' +
+        '<td>' + escapeHtml(r.currentRank || '-') + '</td>' +
+        '<td>' + escapeHtml(r.suggestedRank || '-') + '</td>' +
+        '<td>' + escapeHtml(r.submittedBy || '-') + '</td>' +
+        '<td>' + escapeHtml(formatDateTime(r.createdAt || '')) + '</td>' +
+        '<td><span class="status-pill ' + statusClass + '">' + escapeHtml(r.status || '-') + '</span></td>' +
+      '</tr>';
+    }).join('');
+    if (status) status.textContent = 'Recommendations: ' + rows.length;
+  } catch (err) {
+    body.innerHTML = '<tr><td colspan="6">' + escapeHtml(err.message) + '</td></tr>';
+    if (status) status.textContent = 'Recommendation load failed: ' + err.message;
+  }
+}
+
+async function loadPromotionApprovalQueue() {
+  const body = document.querySelector('#promotionApprovalTable tbody');
+  const status = document.getElementById('promotionApprovalStatus');
+  const statusFilter = String((document.getElementById('promotionApprovalStatusFilter') || {}).value || 'under_review').trim();
+  if (!body) return;
+  body.innerHTML = '<tr><td colspan="8">Loading...</td></tr>';
+  try {
+    const response = await authFetch('/api/promotions/recommendations?status=' + encodeURIComponent(statusFilter));
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Failed to load approval queue');
+    const rows = Array.isArray(data.items) ? data.items : [];
+    if (!rows.length) {
+      body.innerHTML = '<tr><td colspan="8">No recommendations in this queue.</td></tr>';
+      if (status) status.textContent = 'No recommendations in queue.';
+      return;
+    }
+    body.innerHTML = rows.map((r) => {
+      const id = String(r.id || '').replace(/'/g, "\\'");
+      const statusClass = 'status-' + sanitizeName(r.status || 'under_review');
+      return '<tr>' +
+        '<td>' + escapeHtml(r.officerName || '-') + '</td>' +
+        '<td>' + escapeHtml(r.currentRank || '-') + '</td>' +
+        '<td>' + escapeHtml(r.suggestedRank || '-') + '</td>' +
+        '<td title="' + escapeHtml(r.notes || '-') + '">' + escapeHtml(r.notes || '-') + '</td>' +
+        '<td>' + escapeHtml(r.submittedBy || '-') + '</td>' +
+        '<td>' + escapeHtml(formatDateTime(r.createdAt || '')) + '</td>' +
+        '<td><span class="status-pill ' + statusClass + '">' + escapeHtml(r.status || '-') + '</span></td>' +
+        '<td class="approval-actions-cell"><div class="approval-actions">' +
+          '<button onclick="setPromotionRecommendationStatus(\'' + id + '\',\'approved\')">Approve</button> ' +
+          '<button onclick="setPromotionRecommendationStatus(\'' + id + '\',\'denied\')">Deny</button> ' +
+          '<button onclick="deletePromotionRecommendation(\'' + id + '\')">Delete</button>' +
+        '</div></td>' +
+      '</tr>';
+    }).join('');
+    if (status) status.textContent = 'Queue items: ' + rows.length;
+  } catch (err) {
+    body.innerHTML = '<tr><td colspan="8">' + escapeHtml(err.message) + '</td></tr>';
+    if (status) status.textContent = 'Approval queue load failed: ' + err.message;
+  }
+}
+
+async function setPromotionRecommendationStatus(id, nextStatus) {
+  try {
+    const response = await authFetch('/api/promotions/recommendations/' + encodeURIComponent(String(id || '')) + '/status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: nextStatus })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Status update failed');
+    await loadPromotionApprovalQueue();
+    const recStatus = document.getElementById('promotionRecStatus');
+    if (recStatus) await loadPromotionRecommendations();
+  } catch (err) {
+    alert('Status update failed: ' + err.message);
+  }
+}
+
+async function deletePromotionRecommendation(id) {
+  if (!confirm('Delete this promotion recommendation?')) return;
+  try {
+    const response = await authFetch('/api/promotions/recommendations/' + encodeURIComponent(String(id || '')), { method: 'DELETE' });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Delete failed');
+    await loadPromotionApprovalQueue();
+    const recStatus = document.getElementById('promotionRecStatus');
+    if (recStatus) await loadPromotionRecommendations();
+  } catch (err) {
+    alert('Delete failed: ' + err.message);
+  }
+}
+
 async function createAccount() {
   const email = String(document.getElementById('createEmail').value || '').trim();
   const password = String(document.getElementById('createPassword').value || '');
@@ -2500,7 +2815,7 @@ async function loadCalendarEvents() {
         '<td>' + action + '</td>' +
       '</tr>';
     }).join('');
-    if (status) status.textContent = 'Scheduled events: ' + rows.length + ' | viewing times in ' + viewTz;
+    if (status) status.textContent = 'Scheduled events: ' + rows.length;
   } catch (err) {
     body.innerHTML = '<tr><td colspan="7">' + escapeHtml(err.message) + '</td></tr>';
     if (status) status.textContent = 'Calendar load failed: ' + err.message;
