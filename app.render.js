@@ -267,19 +267,31 @@ function applyRuntimeLayoutFixes() {
       if (text === 'sheet tabs') {
         link.remove();
       }
-      if (text.startsWith('messages')) messagesLink = link;
-      if (text === 'admin') adminLink = link;
-      if (text === 'admin chat') adminChatLink = link;
-      if (text === 'discussions' || text === 'message board' || text === 'chat room' || text === 'chat') discussionsLink = link;
-      if (text === 'calendar' || text === 'event calendar') calendarLink = link;
-      if (text === 'fto') ftoLink = link;
-      if (text === 'promotion recommendations') promotionRecLink = link;
-      if (text === 'high command approval') highCommandApprovalLink = link;
+      if (text.startsWith('messages')) {
+        messagesLink = link;
+      }
+      if (text === 'admin') {
+        adminLink = link;
+      }
+      if (text === 'admin chat') {
+        adminChatLink = link;
+      }
+      if (text === 'discussions' || text === 'message board' || text === 'chat room' || text === 'chat') {
+        discussionsLink = link;
+      }
+      if (text === 'calendar' || text === 'event calendar') {
+        calendarLink = link;
+      }
+      if (text === 'fto') {
+        ftoLink = link;
+      }
+      if (text === 'promotion recommendations') {
+        promotionRecLink = link;
+      }
+      if (text === 'high command approval') {
+        highCommandApprovalLink = link;
+      }
     });
-
-    // Remove all admin/fto/promotion/high command links from sidebar for reordering
-    [adminLink, adminChatLink, ftoLink, promotionRecLink, highCommandApprovalLink].forEach(link => { if (link) link.remove(); });
-
 
     links = Array.from(sidebar.querySelectorAll('a'));
     const accountLink = links.find((link) => String(link.textContent || '').trim().toLowerCase() === 'account');
@@ -308,15 +320,6 @@ function applyRuntimeLayoutFixes() {
       calendarLink.textContent = 'Calendar';
       sidebar.appendChild(calendarLink);
     }
-
-    // Insert admin/fto/promotion/high command links directly after calendar
-    let insertAfter = calendarLink;
-    [adminLink, adminChatLink, ftoLink, promotionRecLink, highCommandApprovalLink].forEach(link => {
-      if (link) {
-        sidebar.insertBefore(link, insertAfter.nextSibling);
-        insertAfter = link;
-      }
-    });
 
     const showAdmin = !!currentUser && hasAdminAccessClient(currentUser);
     const showFto = !!currentUser && hasLeadershipAccessClient(currentUser);
@@ -382,13 +385,14 @@ function applyRuntimeLayoutFixes() {
     const countText = unreadMessageCount > 0 ? ('Messages (' + unreadMessageCount + ')') : 'Messages';
     messagesLink.textContent = countText;
 
-    // Remove sidebar build number
     let footer = document.getElementById('sidebarBuildTag');
-    if (footer) footer.remove();
-
-    // Render build number under date in header
-    const buildTag = document.getElementById('headerBuildTag');
-    if (buildTag) buildTag.textContent = 'Build ' + APP_BUILD;
+    if (!footer) {
+      footer = document.createElement('div');
+      footer.id = 'sidebarBuildTag';
+      footer.className = 'sidebar-build-tag';
+      sidebar.appendChild(footer);
+    }
+    footer.textContent = 'Build ' + APP_BUILD;
   }
 
   const title = document.querySelector('.title');
@@ -723,16 +727,24 @@ setAuthLockedLayout(false);
 if(page === "dashboard"){
 
 document.getElementById("content").innerHTML = `
-<h2>Home</h2>
+<h2>Command Dashboard</h2>
 
-<div style="margin-top:2px;margin-bottom:18px;color:#d8f3ff;font-size:32px;font-weight:700;text-align:center;letter-spacing:1px;">Welcome ${formatUserDisplayName(currentUser)}.</div>
+<div id="welcomeMessage" style="margin-top:2px;margin-bottom:10px;color:#d8f3ff"></div>
 
 <div style="margin-top:10px;border:1px solid rgba(255,255,255,.2);padding:12px;background:rgba(0,0,0,.15)">
   <div style="margin:0 0 12px 0;color:#f3bc40;font-family:'Barlow Condensed','Trebuchet MS',sans-serif;font-size:24px;letter-spacing:.5px;line-height:1.1">FORT WORTH POLICE DEPARTMENT - MISSION STATEMENT</div>
   <p style="margin-top:8px;margin-bottom:10px;line-height:1.45">The Fort Worth Police Department is committed to safeguarding our community through integrity, professionalism, and unwavering service. Our mission is to protect life and property, uphold the law with fairness and respect, and strengthen public trust through transparency and accountability.</p>
   <p style="margin:0;line-height:1.45">We strive to maintain a safe and thriving city by working collaboratively with our residents, embracing innovation, and holding ourselves to the highest standards of conduct. Every member of this department is dedicated to acting with courage, compassion, and honor in the pursuit of justice.</p>
 </div>
+
 `;
+
+if (currentUser) {
+  const welcome = document.getElementById('welcomeMessage');
+  if (welcome) {
+    welcome.textContent = 'Welcome ' + formatUserDisplayName(currentUser) + '.';
+  }
+}
 
 loadDashboardAlerts();
 autoSyncOnLoad();
@@ -1088,10 +1100,16 @@ document.getElementById("content").innerHTML = `
     <select id="promotionOfficerSelect" style="min-width:300px;flex:1"></select>
     <select id="promotionSuggestedRank" style="min-width:220px;">
       <option value="">Suggested Rank...</option>
-      <option value="Officer">OFFICER</option>
-      <option value="Senior Officer">SENIOR OFFICER</option>
-      <option value="Corporal">CORPORAL</option>
-      <option value="Sergeant">SERGEANT</option>
+      <option value="Officer">Officer</option>
+      <option value="Senior Officer">Senior Officer</option>
+      <option value="Corpral">Corpral</option>
+      <option value="Sergeant">Sergeant</option>
+      <option value="Lieutenant">Lieutenant</option>
+      <option value="Captain">Captain</option>
+      <option value="Commander">Commander</option>
+      <option value="Deputy Chief">Deputy Chief</option>
+      <option value="Assistant Chief">Assistant Chief</option>
+      <option value="Chief">Chief</option>
     </select>
   </div>
   <textarea id="promotionNotes" rows="4" placeholder="Recommendation notes and reasons" style="width:100%;margin-top:8px"></textarea>
@@ -1278,8 +1296,8 @@ document.getElementById("content").innerHTML = `
   <tbody>
     <tr><td>Email</td><td>${(currentUser && currentUser.email) || '-'}</td></tr>
     <tr><td>Character Name</td><td>${(currentUser && currentUser.characterName) || '-'}</td></tr>
-    <tr><td>Rank</td><td>${(currentUser && currentUser.rank ? currentUser.rank.toUpperCase() : '-')}</td></tr>
-    <tr><td>Role</td><td>${(currentUser && currentUser.role ? currentUser.role.toUpperCase() : '-')}</td></tr>
+    <tr><td>Rank</td><td>${(currentUser && currentUser.rank) || '-'}</td></tr>
+    <tr><td>Role</td><td>${(currentUser && currentUser.role) || '-'}</td></tr>
   </tbody>
 </table>
 
@@ -1303,8 +1321,14 @@ ${canAdminReset ? `
   <button id="adminResetPasswordBtn" style="margin-top:8px;">Reset User Password</button>
 </div>
 ` : ''}
+
+<div style="margin-top:12px;">
+  <button id="logoutBtn">Logout</button>
+</div>
 <pre id="accountStatus" style="margin-top:14px;white-space:pre-wrap;background:rgba(0,0,0,.2);padding:10px;border:1px solid rgba(255,255,255,.2)">Logged in.</pre>
 `;
+
+document.getElementById('logoutBtn').addEventListener('click', logoutAccount);
 document.getElementById('changePasswordBtn').addEventListener('click', changePassword);
 
 const adminResetBtn = document.getElementById('adminResetPasswordBtn');
@@ -1443,7 +1467,7 @@ async function loadRoster(){
         </td>
         <td>${displayName}</td>
         <td>${callsign}</td>
-        <td>${rank ? rank.toUpperCase() : ''}</td>
+        <td>${rank}</td>
         <td>${division}</td>
         <td>${escapeHtml(status || '-')}</td>
         <td>${escapeHtml(activityStatus || '-')}</td>
@@ -1590,13 +1614,16 @@ function renderOfficerProfile(officer) {
   const profileFto = pickOfficerField(officer, ['IsFTO', 'is_fto', 'FTO', 'fto']);
   const isFtoActive = ['yes', 'true', '1', 'fto', 'active'].includes(String(profileFto || '').trim().toLowerCase());
   const profileNotes = pickOfficerField(officer, ['Notes', 'notes', 'Officer_Notes', 'officer_notes', 'Comments', 'comments']);
-  // Only allow up to Sergeant for promotion
   const rankOptions = [
     'Cadet',
     'Officer',
     'Senior Officer',
     'Corporal',
-    'Sergeant'
+    'Sergeant',
+    'Lieutenant',
+    'Captain',
+    'Commander',
+    'Chief'
   ];
   const currentRank = String(profileRank || '').trim();
   const rankOptionSet = new Set(rankOptions.map((r) => r.toLowerCase()));
@@ -1605,7 +1632,7 @@ function renderOfficerProfile(officer) {
   }
   const rankOptionsHtml = rankOptions.map((rankLabel) => {
     const selected = currentRank.toLowerCase() === String(rankLabel || '').toLowerCase() ? ' selected' : '';
-    return '<option value="' + escapeHtml(rankLabel) + '"' + selected + '>' + escapeHtml(rankLabel.toUpperCase()) + '</option>';
+    return '<option value="' + escapeHtml(rankLabel) + '"' + selected + '>' + escapeHtml(rankLabel) + '</option>';
   }).join('');
   const canPromote = !!currentUser && hasLeadershipAccessClient(currentUser);
   const promotionEditor = (canPromote && profileId)
@@ -1958,7 +1985,7 @@ async function loadFtoList() {
         <td>${escapeHtml(item.officerId || '-')}</td>
         <td>${escapeHtml(item.name || '-')}</td>
         <td>${escapeHtml(item.callsign || '-')}</td>
-        <td>${escapeHtml(item.rank ? item.rank.toUpperCase() : '-')}</td>
+        <td>${escapeHtml(item.rank || '-')}</td>
         <td>${escapeHtml(item.division || '-')}</td>
         <td>${escapeHtml(item.addedBy || '-')}</td>
         <td>${escapeHtml(item.addedAt ? new Date(item.addedAt).toLocaleString() : '-')}</td>
@@ -2100,8 +2127,8 @@ async function loadPromotionRecommendations() {
       const statusClass = 'status-' + sanitizeName(r.status || 'under_review');
       return '<tr>' +
         '<td>' + escapeHtml(r.officerName || '-') + '</td>' +
-        '<td>' + escapeHtml((r.currentRank || '-').toUpperCase()) + '</td>' +
-        '<td>' + escapeHtml((r.suggestedRank || '-').toUpperCase()) + '</td>' +
+        '<td>' + escapeHtml(r.currentRank || '-') + '</td>' +
+        '<td>' + escapeHtml(r.suggestedRank || '-') + '</td>' +
         '<td>' + escapeHtml(r.submittedBy || '-') + '</td>' +
         '<td>' + escapeHtml(formatDateTime(r.createdAt || '')) + '</td>' +
         '<td><span class="status-pill ' + statusClass + '">' + escapeHtml(r.status || '-') + '</span></td>' +
@@ -2135,8 +2162,8 @@ async function loadPromotionApprovalQueue() {
       const statusClass = 'status-' + sanitizeName(r.status || 'under_review');
       return '<tr>' +
         '<td>' + escapeHtml(r.officerName || '-') + '</td>' +
-        '<td>' + escapeHtml((r.currentRank || '-').toUpperCase()) + '</td>' +
-        '<td>' + escapeHtml((r.suggestedRank || '-').toUpperCase()) + '</td>' +
+        '<td>' + escapeHtml(r.currentRank || '-') + '</td>' +
+        '<td>' + escapeHtml(r.suggestedRank || '-') + '</td>' +
         '<td title="' + escapeHtml(r.notes || '-') + '">' + escapeHtml(r.notes || '-') + '</td>' +
         '<td>' + escapeHtml(r.submittedBy || '-') + '</td>' +
         '<td>' + escapeHtml(formatDateTime(r.createdAt || '')) + '</td>' +
@@ -3216,7 +3243,7 @@ async function loadAdminUsers() {
         '<td>' + name + '</td>' +
         '<td>' + email + '</td>' +
         '<td>' + (hasAccount ? 'Yes' : 'No') + '</td>' +
-        '<td>' + (role ? role.toUpperCase() : '') + '</td>' +
+        '<td>' + role + '</td>' +
         '<td>' + actionBtn + '</td>' +
       '</tr>';
     }).join('');
