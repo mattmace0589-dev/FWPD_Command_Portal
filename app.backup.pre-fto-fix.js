@@ -14,6 +14,7 @@ const DEFAULT_EVALUATION_SOURCE_URL = 'https://docs.google.com/spreadsheets/d/e/
 const PORTAL_OWNER_EMAILS = ['mattprz89@gmail.com'];
 const APP_BUILD = '20260309z32';
 const MESSAGE_POLL_MS = 45000;
+const DISCUSSION_POLL_MS = 4000;
 
 let currentUser = null;
 let unreadMessageCount = 0;
@@ -22,6 +23,7 @@ let lastLoadedReportItems = [];
 let dataAutoSyncPromise = null;
 let ftoListLoadToken = 0;
 let headerAlertLines = [];
+let discussionPollTimer = null;
 
 function formatUserDisplayName(user) {
   const rank = String((user && user.rank) || '').trim();
@@ -355,6 +357,23 @@ function stopMessagePolling() {
   }
 }
 
+function startDiscussionLiveRefresh() {
+  stopDiscussionLiveRefresh();
+  discussionPollTimer = setInterval(() => {
+    if (!isLoggedIn()) return;
+    const thread = document.getElementById('discussionMessages');
+    if (!thread) return;
+    loadDiscussionMessages({ preserveScroll: true, silent: true });
+  }, DISCUSSION_POLL_MS);
+}
+
+function stopDiscussionLiveRefresh() {
+  if (discussionPollTimer) {
+    clearInterval(discussionPollTimer);
+    discussionPollTimer = null;
+  }
+}
+
 function startMessagePolling() {
   stopMessagePolling();
   messagePollTimer = setInterval(() => {
@@ -619,6 +638,7 @@ async function ensureDataTabsSynced() {
 
 function loadPage(page){
 applyRuntimeLayoutFixes();
+stopDiscussionLiveRefresh();
 if(!isLoggedIn()){
 renderLoginScreen();
 return;
@@ -877,31 +897,37 @@ if(page === "discussions"){
 
 document.getElementById("content").innerHTML = `
 <h2>Discussions</h2>
-<p>Open command board for all members.</p>
+<p>Open command board for all members. Messages refresh automatically.</p>
 
-<div style="margin-top:10px;border:1px solid rgba(255,255,255,.2);padding:10px;background:rgba(0,0,0,.15)">
-  <textarea id="discussionText" rows="3" placeholder="Post to discussion board" style="width:100%"></textarea>
-  <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
-    <button id="postDiscussionBtn">Post</button>
-    <button id="refreshDiscussionBtn">Refresh</button>
+<div class="discussion-chat-shell" style="margin-top:10px;">
+  <div id="discussionMessages" class="discussion-chat-thread">Loading discussions...</div>
+  <div class="discussion-chat-compose">
+    <textarea id="discussionText" rows="2" placeholder="Type a message and press Enter to send" style="width:100%"></textarea>
+    <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
+      <button id="postDiscussionBtn">Send</button>
+      <button id="refreshDiscussionBtn">Refresh</button>
+    </div>
   </div>
 </div>
 
-<pre id="discussionStatus" style="margin-top:10px;white-space:pre-wrap;background:rgba(0,0,0,.2);padding:10px;border:1px solid rgba(255,255,255,.2)">Loading discussions...</pre>
-
-<div style="margin-top:10px;overflow:auto">
-  <table id="discussionTable">
-    <thead><tr><th>When</th><th>Author</th><th>Message</th><th>Action</th></tr></thead>
-    <tbody></tbody>
-  </table>
-</div>
+<pre id="discussionStatus" style="margin-top:10px;white-space:pre-wrap;background:rgba(0,0,0,.2);padding:10px;border:1px solid rgba(255,255,255,.2)">Connecting to discussion feed...</pre>
 `;
 
 const postBtn = document.getElementById('postDiscussionBtn');
 if (postBtn) postBtn.addEventListener('click', postDiscussionMessage);
 const refreshBtn = document.getElementById('refreshDiscussionBtn');
 if (refreshBtn) refreshBtn.addEventListener('click', loadDiscussionMessages);
+const input = document.getElementById('discussionText');
+if (input) {
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      postDiscussionMessage();
+    }
+  });
+}
 loadDiscussionMessages();
+startDiscussionLiveRefresh();
 
 }
 
@@ -2239,34 +2265,75 @@ async function deleteReportItem(reportId) {
   }
 }
 
-async function loadDiscussionMessages() {
+async function loadDiscussionMessages(options = {}) {
+  const opts = options || {};
   const body = document.querySelector('#discussionTable tbody');
+  const thread = document.getElementById('discussionMessages');
   const status = document.getElementById('discussionStatus');
-  if (!body) return;
-  body.innerHTML = '<tr><td colspan="4">Loading...</td></tr>';
+  if (!body && !thread) return;
+
+  let wasNearBottom = true;
+  if (thread) {
+    const distanceToBottom = thread.scrollHeight - thread.scrollTop - thread.clientHeight;
+    wasNearBottom = distanceToBottom < 80;
+    if (!opts.silent) thread.innerHTML = '<div class="discussion-chat-empty">Loading...</div>';
+  } else if (body && !opts.silent) {
+    body.innerHTML = '<tr><td colspan="4">Loading...</td></tr>';
+  }
   try {
     const response = await authFetch('/api/discussions/messages?limit=250');
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Failed to load discussion board');
     const rows = Array.isArray(data.items) ? data.items : [];
     if (!rows.length) {
-      body.innerHTML = '<tr><td colspan="4">No discussion messages yet.</td></tr>';
+      if (thread) {
+        thread.innerHTML = '<div class="discussion-chat-empty">No discussion messages yet.</div>';
+      } else if (body) {
+        body.innerHTML = '<tr><td colspan="4">No discussion messages yet.</td></tr>';
+      }
       if (status) status.textContent = 'No discussion messages yet.';
       return;
     }
-    body.innerHTML = rows.map((m) => {
-      const canDelete = hasLeadershipAccessClient(currentUser) || normalizeEmailClient(currentUser && currentUser.email) === normalizeEmailClient(m.authorEmail);
-      const action = canDelete ? ('<button onclick="deleteDiscussionMessage(\'' + escapeHtml(m.id) + '\')">Delete</button>') : '-';
-      return '<tr>' +
-        '<td>' + escapeHtml(formatDateTime(m.createdAt || '')) + '</td>' +
-        '<td>' + escapeHtml(m.author || '-') + '</td>' +
-        '<td>' + escapeHtml(m.text || '-') + '</td>' +
-        '<td>' + action + '</td>' +
-      '</tr>';
-    }).join('');
+    if (thread) {
+      const me = normalizeEmailClient(currentUser && currentUser.email);
+      thread.innerHTML = rows.map((m) => {
+        const authorEmail = normalizeEmailClient(m.authorEmail);
+        const isMine = !!me && me === authorEmail;
+        const canDelete = hasLeadershipAccessClient(currentUser) || isMine;
+        const deleteBtn = canDelete
+          ? ('<button class="discussion-delete-btn" onclick="deleteDiscussionMessage(\'' + escapeHtml(m.id) + '\')">Delete</button>')
+          : '';
+        return '<div class="discussion-chat-message ' + (isMine ? 'mine' : 'other') + '">' +
+          '<div class="discussion-chat-meta">' +
+            '<span>' + escapeHtml(m.author || 'Officer') + '</span>' +
+            '<span>' + escapeHtml(formatDateTime(m.createdAt || '')) + '</span>' +
+          '</div>' +
+          '<div class="discussion-chat-text">' + escapeHtml(m.text || '-') + '</div>' +
+          (deleteBtn ? ('<div class="discussion-chat-actions">' + deleteBtn + '</div>') : '') +
+        '</div>';
+      }).join('');
+      if (wasNearBottom || !opts.preserveScroll) {
+        thread.scrollTop = thread.scrollHeight;
+      }
+    } else if (body) {
+      body.innerHTML = rows.map((m) => {
+        const canDelete = hasLeadershipAccessClient(currentUser) || normalizeEmailClient(currentUser && currentUser.email) === normalizeEmailClient(m.authorEmail);
+        const action = canDelete ? ('<button onclick="deleteDiscussionMessage(\'' + escapeHtml(m.id) + '\')">Delete</button>') : '-';
+        return '<tr>' +
+          '<td>' + escapeHtml(formatDateTime(m.createdAt || '')) + '</td>' +
+          '<td>' + escapeHtml(m.author || '-') + '</td>' +
+          '<td>' + escapeHtml(m.text || '-') + '</td>' +
+          '<td>' + action + '</td>' +
+        '</tr>';
+      }).join('');
+    }
     if (status) status.textContent = 'Discussion messages: ' + rows.length;
   } catch (err) {
-    body.innerHTML = '<tr><td colspan="4">' + escapeHtml(err.message) + '</td></tr>';
+    if (thread) {
+      thread.innerHTML = '<div class="discussion-chat-empty">' + escapeHtml(err.message) + '</div>';
+    } else if (body) {
+      body.innerHTML = '<tr><td colspan="4">' + escapeHtml(err.message) + '</td></tr>';
+    }
     if (status) status.textContent = 'Discussion load failed: ' + err.message;
   }
 }
@@ -2288,7 +2355,7 @@ async function postDiscussionMessage() {
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Post failed');
     if (input) input.value = '';
-    await loadDiscussionMessages();
+    await loadDiscussionMessages({ preserveScroll: false });
   } catch (err) {
     if (status) status.textContent = 'Post failed: ' + err.message;
   }
@@ -2299,7 +2366,7 @@ async function deleteDiscussionMessage(id) {
     const response = await authFetch('/api/discussions/messages/' + encodeURIComponent(String(id || '')), { method: 'DELETE' });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Delete failed');
-    await loadDiscussionMessages();
+    await loadDiscussionMessages({ preserveScroll: true });
   } catch (err) {
     alert('Discussion delete failed: ' + err.message);
   }
