@@ -1887,7 +1887,7 @@ app.get('/api/messages/inbox', requireAuth, (req, res) => {
   try {
     const email = normalizeEmail(req.auth.email);
     const unreadOnly = String(req.query.unreadOnly || '').trim().toLowerCase() === 'true';
-    const limit = Math.max(1, Math.min(250, Number(req.query.limit || 100)));
+    const limit = Math.max(1, Math.min(5000, Number(req.query.limit || 1000)));
     let rows = loadInternalMessages().filter(m => normalizeEmail(m && m.toEmail) === email);
     if (unreadOnly) rows = rows.filter(m => !m.readAt);
     rows.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
@@ -1900,7 +1900,7 @@ app.get('/api/messages/inbox', requireAuth, (req, res) => {
 app.get('/api/messages/sent', requireAuth, (req, res) => {
   try {
     const email = normalizeEmail(req.auth.email);
-    const limit = Math.max(1, Math.min(250, Number(req.query.limit || 100)));
+    const limit = Math.max(1, Math.min(5000, Number(req.query.limit || 1000)));
     const rows = loadInternalMessages()
       .filter(m => normalizeEmail(m && m.fromEmail) === email)
       .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
