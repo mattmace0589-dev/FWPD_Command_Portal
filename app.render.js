@@ -382,15 +382,13 @@ function applyRuntimeLayoutFixes() {
     const countText = unreadMessageCount > 0 ? ('Messages (' + unreadMessageCount + ')') : 'Messages';
     messagesLink.textContent = countText;
 
+    // Remove sidebar build number
     let footer = document.getElementById('sidebarBuildTag');
-    if (!footer) {
-      footer = document.createElement('div');
-      footer.id = 'sidebarBuildTag';
-      footer.className = 'sidebar-build-tag';
-    }
-    // Always pin build tag to the bottom of the sidebar
-    sidebar.appendChild(footer);
-    footer.textContent = 'Build ' + APP_BUILD;
+    if (footer) footer.remove();
+
+    // Render build number under date in header
+    const buildTag = document.getElementById('headerBuildTag');
+    if (buildTag) buildTag.textContent = 'Build ' + APP_BUILD;
   }
 
   const title = document.querySelector('.title');
@@ -725,24 +723,16 @@ setAuthLockedLayout(false);
 if(page === "dashboard"){
 
 document.getElementById("content").innerHTML = `
-<h2>Command Dashboard</h2>
+<h2>Home</h2>
 
-<div id="welcomeMessage" style="margin-top:2px;margin-bottom:10px;color:#d8f3ff"></div>
+<div style="margin-top:2px;margin-bottom:18px;color:#d8f3ff;font-size:32px;font-weight:700;text-align:center;letter-spacing:1px;">Welcome ${formatUserDisplayName(currentUser)}.</div>
 
 <div style="margin-top:10px;border:1px solid rgba(255,255,255,.2);padding:12px;background:rgba(0,0,0,.15)">
   <div style="margin:0 0 12px 0;color:#f3bc40;font-family:'Barlow Condensed','Trebuchet MS',sans-serif;font-size:24px;letter-spacing:.5px;line-height:1.1">FORT WORTH POLICE DEPARTMENT - MISSION STATEMENT</div>
   <p style="margin-top:8px;margin-bottom:10px;line-height:1.45">The Fort Worth Police Department is committed to safeguarding our community through integrity, professionalism, and unwavering service. Our mission is to protect life and property, uphold the law with fairness and respect, and strengthen public trust through transparency and accountability.</p>
   <p style="margin:0;line-height:1.45">We strive to maintain a safe and thriving city by working collaboratively with our residents, embracing innovation, and holding ourselves to the highest standards of conduct. Every member of this department is dedicated to acting with courage, compassion, and honor in the pursuit of justice.</p>
 </div>
-
 `;
-
-if (currentUser) {
-  const welcome = document.getElementById('welcomeMessage');
-  if (welcome) {
-    welcome.textContent = 'Welcome ' + formatUserDisplayName(currentUser) + '.';
-  }
-}
 
 loadDashboardAlerts();
 autoSyncOnLoad();
