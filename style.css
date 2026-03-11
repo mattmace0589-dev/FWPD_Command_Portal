@@ -31,7 +31,8 @@ body {
   background:
     radial-gradient(860px 460px at 88% -5%, rgba(243, 188, 64, 0.16), transparent 62%),
     radial-gradient(680px 420px at -12% 112%, rgba(210, 74, 67, 0.12), transparent 66%),
-    linear-gradient(160deg, var(--bg-main) 0%, var(--bg-deep) 45%, var(--bg-slate) 100%);
+    linear-gradient(160deg, var(--bg-main) 0%, var(--bg-deep) 45%, var(--bg-slate) 100%),
+    url('images/fwpd_patch.png') center center / min(123vh, 1290px) no-repeat;
 }
 
 body::before {
@@ -76,7 +77,7 @@ body::after {
   padding: 12px 22px;
   border-bottom: 1px solid rgba(243, 188, 64, 0.45);
   background:
-    url('images/texasflag.png') center center/cover no-repeat,
+    url('images/texasflag.png') center center/contain no-repeat,
     linear-gradient(90deg, rgba(243, 188, 64, 0.13) 0%, rgba(142, 215, 255, 0.09) 36%, transparent 68%),
     linear-gradient(180deg, rgba(5, 20, 43, 0.97), rgba(8, 29, 62, 0.94));
   box-shadow: 0 16px 34px rgba(0, 0, 0, 0.42), inset 0 -1px 0 rgba(142, 215, 255, 0.2);
@@ -305,12 +306,9 @@ body::after {
   padding: 2px 6px;
   border: none;
   border-radius: 4px;
-  background: none;
-  font-size: 10px;
-  letter-spacing: 0.2px;
-  color: #bfa14a;
-  opacity: 0.65;
-  text-align: right;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
   width: 100%;
 
 .content {
@@ -483,12 +481,15 @@ pre {
 }
 
 .login-shell {
-  border: 1px solid rgba(142, 215, 255, 0.36);
+  border: 1.5px solid #f3bc40;
   background: linear-gradient(180deg, rgba(4, 20, 43, 0.98), rgba(8, 31, 64, 0.96));
   box-shadow: 0 16px 30px rgba(0, 0, 0, 0.38), 0 0 0 6px rgba(243, 188, 64, 0.08), inset 0 0 0 1px rgba(255, 255, 255, 0.06);
   padding: 32px 24px 24px 24px;
   max-width: 520px;
-  margin: 40px auto 0 auto;
+  margin: 60px auto 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .login-cli-header {
@@ -767,20 +768,18 @@ pre {
     font-size: 11px;
   }
 
-  .header-bell-btn {
-    min-width: 42px;
-    width: 42px;
-    padding: 5px;
-  }
-
-  .header-notify-panel {
-    top: auto;
-    bottom: 38px;
-    right: 0;
-    width: min(340px, calc(100vw - 20px));
-  }
-
-  .sidebar {
+      margin-top: 2px;
+      padding: 0 4px;
+      border: none;
+      border-radius: 4px;
+      background: none;
+      font-size: 11px;
+      letter-spacing: 0.2px;
+      color: #bfa14a;
+      opacity: 0.75;
+      text-align: center;
+      width: 100%;
+      font-family: 'Space Mono', 'Consolas', monospace;
     width: 100%;
     display: flex;
     overflow-x: auto;
@@ -824,6 +823,13 @@ pre {
     width: 100%;
     max-height: none;
     margin: 10px 0 12px;
-    font-size: clamp(12px, 1.45vw, 14px);
+    font-size: clamp(13px, 1.45vw, 15px);
+    color: #fff;
+    background: #a80000;
+    border-radius: 8px;
+    border: 1.5px solid #ff3b3b;
+    padding: 14px 18px 10px 18px;
+    margin-bottom: 18px;
+    box-shadow: 0 2px 12px rgba(168,0,0,0.08);
   }
 }
