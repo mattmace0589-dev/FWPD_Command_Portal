@@ -1321,14 +1321,8 @@ ${canAdminReset ? `
   <button id="adminResetPasswordBtn" style="margin-top:8px;">Reset User Password</button>
 </div>
 ` : ''}
-
-<div style="margin-top:12px;">
-  <button id="logoutBtn">Logout</button>
-</div>
 <pre id="accountStatus" style="margin-top:14px;white-space:pre-wrap;background:rgba(0,0,0,.2);padding:10px;border:1px solid rgba(255,255,255,.2)">Logged in.</pre>
 `;
-
-document.getElementById('logoutBtn').addEventListener('click', logoutAccount);
 document.getElementById('changePasswordBtn').addEventListener('click', changePassword);
 
 const adminResetBtn = document.getElementById('adminResetPasswordBtn');

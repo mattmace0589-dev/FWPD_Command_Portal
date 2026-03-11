@@ -391,6 +391,11 @@ function applyRuntimeLayoutFixes() {
       footer.id = 'sidebarBuildTag';
       footer.className = 'sidebar-build-tag';
       sidebar.appendChild(footer);
+    } else {
+      // Move to end if not already last
+      if (sidebar.lastElementChild !== footer) {
+        sidebar.appendChild(footer);
+      }
     }
     footer.textContent = 'Build ' + APP_BUILD;
   }
@@ -1100,16 +1105,10 @@ document.getElementById("content").innerHTML = `
     <select id="promotionOfficerSelect" style="min-width:300px;flex:1"></select>
     <select id="promotionSuggestedRank" style="min-width:220px;">
       <option value="">Suggested Rank...</option>
-      <option value="Officer">Officer</option>
-      <option value="Senior Officer">Senior Officer</option>
-      <option value="Corpral">Corpral</option>
-      <option value="Sergeant">Sergeant</option>
-      <option value="Lieutenant">Lieutenant</option>
-      <option value="Captain">Captain</option>
-      <option value="Commander">Commander</option>
-      <option value="Deputy Chief">Deputy Chief</option>
-      <option value="Assistant Chief">Assistant Chief</option>
-      <option value="Chief">Chief</option>
+      <option value="Officer">OFFICER</option>
+      <option value="Senior Officer">SENIOR OFFICER</option>
+      <option value="Corporal">CORPORAL</option>
+      <option value="Sergeant">SERGEANT</option>
     </select>
   </div>
   <textarea id="promotionNotes" rows="4" placeholder="Recommendation notes and reasons" style="width:100%;margin-top:8px"></textarea>
@@ -1296,8 +1295,8 @@ document.getElementById("content").innerHTML = `
   <tbody>
     <tr><td>Email</td><td>${(currentUser && currentUser.email) || '-'}</td></tr>
     <tr><td>Character Name</td><td>${(currentUser && currentUser.characterName) || '-'}</td></tr>
-    <tr><td>Rank</td><td>${(currentUser && currentUser.rank) || '-'}</td></tr>
-    <tr><td>Role</td><td>${(currentUser && currentUser.role) || '-'}</td></tr>
+    <tr><td>Rank</td><td>${(currentUser && currentUser.rank ? currentUser.rank.toUpperCase() : '-')}</td></tr>
+    <tr><td>Role</td><td>${(currentUser && currentUser.role ? currentUser.role.toUpperCase() : '-')}</td></tr>
   </tbody>
 </table>
 
@@ -1321,14 +1320,8 @@ ${canAdminReset ? `
   <button id="adminResetPasswordBtn" style="margin-top:8px;">Reset User Password</button>
 </div>
 ` : ''}
-
-<div style="margin-top:12px;">
-  <button id="logoutBtn">Logout</button>
-</div>
 <pre id="accountStatus" style="margin-top:14px;white-space:pre-wrap;background:rgba(0,0,0,.2);padding:10px;border:1px solid rgba(255,255,255,.2)">Logged in.</pre>
 `;
-
-document.getElementById('logoutBtn').addEventListener('click', logoutAccount);
 document.getElementById('changePasswordBtn').addEventListener('click', changePassword);
 
 const adminResetBtn = document.getElementById('adminResetPasswordBtn');
@@ -1467,7 +1460,7 @@ async function loadRoster(){
         </td>
         <td>${displayName}</td>
         <td>${callsign}</td>
-        <td>${rank}</td>
+        <td>${rank ? rank.toUpperCase() : ''}</td>
         <td>${division}</td>
         <td>${escapeHtml(status || '-')}</td>
         <td>${escapeHtml(activityStatus || '-')}</td>
@@ -1614,16 +1607,13 @@ function renderOfficerProfile(officer) {
   const profileFto = pickOfficerField(officer, ['IsFTO', 'is_fto', 'FTO', 'fto']);
   const isFtoActive = ['yes', 'true', '1', 'fto', 'active'].includes(String(profileFto || '').trim().toLowerCase());
   const profileNotes = pickOfficerField(officer, ['Notes', 'notes', 'Officer_Notes', 'officer_notes', 'Comments', 'comments']);
+  // Only allow up to Sergeant for promotion
   const rankOptions = [
     'Cadet',
     'Officer',
     'Senior Officer',
     'Corporal',
-    'Sergeant',
-    'Lieutenant',
-    'Captain',
-    'Commander',
-    'Chief'
+    'Sergeant'
   ];
   const currentRank = String(profileRank || '').trim();
   const rankOptionSet = new Set(rankOptions.map((r) => r.toLowerCase()));
@@ -1632,7 +1622,7 @@ function renderOfficerProfile(officer) {
   }
   const rankOptionsHtml = rankOptions.map((rankLabel) => {
     const selected = currentRank.toLowerCase() === String(rankLabel || '').toLowerCase() ? ' selected' : '';
-    return '<option value="' + escapeHtml(rankLabel) + '"' + selected + '>' + escapeHtml(rankLabel) + '</option>';
+    return '<option value="' + escapeHtml(rankLabel) + '"' + selected + '>' + escapeHtml(rankLabel.toUpperCase()) + '</option>';
   }).join('');
   const canPromote = !!currentUser && hasLeadershipAccessClient(currentUser);
   const promotionEditor = (canPromote && profileId)
@@ -1985,7 +1975,7 @@ async function loadFtoList() {
         <td>${escapeHtml(item.officerId || '-')}</td>
         <td>${escapeHtml(item.name || '-')}</td>
         <td>${escapeHtml(item.callsign || '-')}</td>
-        <td>${escapeHtml(item.rank || '-')}</td>
+        <td>${escapeHtml(item.rank ? item.rank.toUpperCase() : '-')}</td>
         <td>${escapeHtml(item.division || '-')}</td>
         <td>${escapeHtml(item.addedBy || '-')}</td>
         <td>${escapeHtml(item.addedAt ? new Date(item.addedAt).toLocaleString() : '-')}</td>
@@ -2127,8 +2117,8 @@ async function loadPromotionRecommendations() {
       const statusClass = 'status-' + sanitizeName(r.status || 'under_review');
       return '<tr>' +
         '<td>' + escapeHtml(r.officerName || '-') + '</td>' +
-        '<td>' + escapeHtml(r.currentRank || '-') + '</td>' +
-        '<td>' + escapeHtml(r.suggestedRank || '-') + '</td>' +
+        '<td>' + escapeHtml((r.currentRank || '-').toUpperCase()) + '</td>' +
+        '<td>' + escapeHtml((r.suggestedRank || '-').toUpperCase()) + '</td>' +
         '<td>' + escapeHtml(r.submittedBy || '-') + '</td>' +
         '<td>' + escapeHtml(formatDateTime(r.createdAt || '')) + '</td>' +
         '<td><span class="status-pill ' + statusClass + '">' + escapeHtml(r.status || '-') + '</span></td>' +
@@ -2162,8 +2152,8 @@ async function loadPromotionApprovalQueue() {
       const statusClass = 'status-' + sanitizeName(r.status || 'under_review');
       return '<tr>' +
         '<td>' + escapeHtml(r.officerName || '-') + '</td>' +
-        '<td>' + escapeHtml(r.currentRank || '-') + '</td>' +
-        '<td>' + escapeHtml(r.suggestedRank || '-') + '</td>' +
+        '<td>' + escapeHtml((r.currentRank || '-').toUpperCase()) + '</td>' +
+        '<td>' + escapeHtml((r.suggestedRank || '-').toUpperCase()) + '</td>' +
         '<td title="' + escapeHtml(r.notes || '-') + '">' + escapeHtml(r.notes || '-') + '</td>' +
         '<td>' + escapeHtml(r.submittedBy || '-') + '</td>' +
         '<td>' + escapeHtml(formatDateTime(r.createdAt || '')) + '</td>' +
@@ -3243,7 +3233,7 @@ async function loadAdminUsers() {
         '<td>' + name + '</td>' +
         '<td>' + email + '</td>' +
         '<td>' + (hasAccount ? 'Yes' : 'No') + '</td>' +
-        '<td>' + role + '</td>' +
+        '<td>' + (role ? role.toUpperCase() : '') + '</td>' +
         '<td>' + actionBtn + '</td>' +
       '</tr>';
     }).join('');

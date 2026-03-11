@@ -124,7 +124,7 @@ body::after {
 
 .header-tools {
   position: absolute;
-  right: 112px;
+  right: 212px;
   top: 50%;
   transform: translateY(-50%);
   display: flex;
@@ -743,7 +743,7 @@ pre {
   .header-tools {
     top: auto;
     bottom: 8px;
-    right: 84px;
+    right: 72px;
     transform: none;
   }
 
