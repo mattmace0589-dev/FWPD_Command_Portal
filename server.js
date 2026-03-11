@@ -2641,20 +2641,82 @@ app.delete('/api/admin-chat/messages/:id', requireAuth, (req, res) => {
 });
 
 function parseCalendarEventDateTime(event) {
+  const DEFAULT_CALENDAR_TIMEZONE = 'America/New_York';
+  function getTimeZoneOffsetMs(date, timeZone) {
+    const dtf = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23'
+    });
+    const parts = dtf.formatToParts(date).reduce((acc, p) => {
+      if (p.type !== 'literal') acc[p.type] = p.value;
+      return acc;
+    }, {});
+    const asUtc = Date.UTC(
+      Number(parts.year || 0),
+      Number(parts.month || 1) - 1,
+      Number(parts.day || 1),
+      Number(parts.hour || 0),
+      Number(parts.minute || 0),
+      Number(parts.second || 0)
+    );
+    return asUtc - date.getTime();
+  }
+
+  function zonedDateTimeToUtc(dateText, timeText, timeZone) {
+    const ymd = String(dateText || '').trim().split('-').map((n) => Number(n));
+    if (ymd.length !== 3 || ymd.some((n) => Number.isNaN(n))) return null;
+    const rawTime = String(timeText || '').trim() || '09:00';
+    const hm = rawTime.split(':').map((n) => Number(n));
+    const hour = Number.isNaN(hm[0]) ? 9 : hm[0];
+    const minute = Number.isNaN(hm[1]) ? 0 : hm[1];
+
+    const [year, month, day] = ymd;
+    const utcGuessMs = Date.UTC(year, month - 1, day, hour, minute, 0, 0);
+    const utcGuess = new Date(utcGuessMs);
+    if (Number.isNaN(utcGuess.getTime())) return null;
+
+    const offsetMs = getTimeZoneOffsetMs(utcGuess, timeZone);
+    const result = new Date(utcGuessMs - offsetMs);
+    if (Number.isNaN(result.getTime())) return null;
+    return result;
+  }
+
   const date = String(event && event.date || '').trim();
   const time = String(event && event.time || '').trim() || '09:00';
+  const timeZone = String(event && event.timezone || '').trim() || DEFAULT_CALENDAR_TIMEZONE;
   if (!date) return null;
-  const iso = date + 'T' + (time.length <= 5 ? (time + ':00') : time);
-  const dt = new Date(iso);
-  if (Number.isNaN(dt.getTime())) return null;
-  return dt;
+  return zonedDateTimeToUtc(date, time, timeZone);
+}
+
+function isValidTimeZone(timeZone) {
+  const tz = String(timeZone || '').trim();
+  if (!tz) return false;
+  try {
+    Intl.DateTimeFormat('en-US', { timeZone: tz }).format(new Date());
+    return true;
+  } catch (e) {
+    return false;
+  }
 }
 
 app.get('/api/calendar/events', requireAuth, (req, res) => {
   try {
-    const rows = loadCalendarEvents().sort((a, b) => {
-      const ad = parseCalendarEventDateTime(a);
-      const bd = parseCalendarEventDateTime(b);
+    const rows = loadCalendarEvents().map((ev) => {
+      const dt = parseCalendarEventDateTime(ev);
+      const timezone = String(ev && ev.timezone || '').trim() || 'America/New_York';
+      return Object.assign({}, ev, {
+        timezone,
+        utcAt: dt ? dt.toISOString() : null
+      });
+    }).sort((a, b) => {
+      const ad = a && a.utcAt ? new Date(a.utcAt) : null;
+      const bd = b && b.utcAt ? new Date(b.utcAt) : null;
       if (!ad && !bd) return 0;
       if (!ad) return 1;
       if (!bd) return -1;
@@ -2668,18 +2730,23 @@ app.get('/api/calendar/events', requireAuth, (req, res) => {
 
 app.post('/api/calendar/events', requireAuth, (req, res) => {
   try {
+    const DEFAULT_CALENDAR_TIMEZONE = 'America/New_York';
     const date = String(req.body && req.body.date || '').trim();
     const title = String(req.body && req.body.title || '').trim();
     const time = String(req.body && req.body.time || '').trim();
     const note = String(req.body && req.body.note || '').trim();
+    const timeZoneInput = String(req.body && req.body.timezone || '').trim();
+    const timezone = timeZoneInput || DEFAULT_CALENDAR_TIMEZONE;
     if (!date) return res.status(400).json({ error: 'Event date is required.' });
     if (!title) return res.status(400).json({ error: 'Event title is required.' });
+    if (!isValidTimeZone(timezone)) return res.status(400).json({ error: 'Valid event timezone is required.' });
 
     const item = {
       id: 'e_' + Date.now() + '_' + crypto.randomBytes(5).toString('hex'),
       date,
       title: title.slice(0, 200),
       time: time.slice(0, 16),
+      timezone,
       note: note.slice(0, 800),
       createdAt: new Date().toISOString(),
       createdBy: formatUserDisplayName(req.auth),

@@ -6,6 +6,7 @@ const AUTH_TOKEN_KEY = 'fwpd_auth_token';
 const COMMAND_USERS_SOURCE_URL_KEY = 'fwpd_command_users_source_url';
 const DISCIPLINE_SOURCE_URL_KEY = 'fwpd_discipline_source_url';
 const EVALUATION_SOURCE_URL_KEY = 'fwpd_evaluation_source_url';
+const CALENDAR_VIEW_TIMEZONE_KEY = 'fwpd_calendar_view_timezone';
 const AUTO_COMMAND_USERS_LINK_KEY = 'fwpd_command_users_auto_linked';
 const DEFAULT_COMMAND_USERS_SOURCE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR6_40O35zd-9GMo_nTg5KS76Svzt1P8ZKrfBQwPAtLloGFtpE1r4JBP3t-F-meLlDKCpvWzZkhMlOb/pubhtml?gid=1476592599&single=true';
 const DEFAULT_ROSTER_SOURCE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR6_40O35zd-9GMo_nTg5KS76Svzt1P8ZKrfBQwPAtLloGFtpE1r4JBP3t-F-meLlDKCpvWzZkhMlOb/pubhtml?gid=757275616&single=true';
@@ -15,6 +16,15 @@ const PORTAL_OWNER_EMAILS = ['mattprz89@gmail.com'];
 const APP_BUILD = '20260309z32';
 const MESSAGE_POLL_MS = 45000;
 const DISCUSSION_POLL_MS = 4000;
+const DEFAULT_CALENDAR_TIMEZONE = 'America/New_York';
+
+const CALENDAR_TIMEZONE_OPTIONS = [
+  { value: 'America/New_York', label: 'EST / EDT (US Eastern)' },
+  { value: 'America/Chicago', label: 'CST / CDT (US Central)' },
+  { value: 'America/Denver', label: 'MST / MDT (US Mountain)' },
+  { value: 'America/Los_Angeles', label: 'PST / PDT (US Pacific)' },
+  { value: 'UTC', label: 'UTC' }
+];
 
 let currentUser = null;
 let unreadMessageCount = 0;
@@ -410,12 +420,12 @@ function setAuthLockedLayout(locked) {
 function renderLoginScreen(statusText = '') {
   setAuthLockedLayout(true);
   document.getElementById('content').innerHTML = `
-    <div class="login-shell" style="max-width:760px;margin:20px auto;">
+    <div class="login-shell" style="max-width:1060px;margin:20px auto;">
       <div class="login-cli-header">MDT ACCESS TERMINAL :: AUTHENTICATION</div>
       <div class="login-cli-subheader">SECURE SESSION REQUIRED</div>
       <h2>Command Login</h2>
       <div class="login-legal-disclaimer">
-        LEGAL DISCLAIMER: THIS PORTAL IS A PRIVATE TOOL FOR A FIVEM ROLEPLAY COMMUNITY AND IS PROVIDED STRICTLY FOR FICTIONAL, ENTERTAINMENT, AND TRAINING-STYLE ROLEPLAY USE. THIS PROJECT IS NOT AFFILIATED WITH, ENDORSED BY, SPONSORED BY, OR CONNECTED TO THE FORT WORTH POLICE DEPARTMENT OR ANY CITY, COUNTY, STATE, FEDERAL, OR OTHER GOVERNMENT AGENCY. ANY NAMES, TERMS, TITLES, OR INSIGNIA-LIKE REFERENCES ARE USED ONLY FOR NON-OFFICIAL ROLEPLAY CONTEXT AND DO NOT REPRESENT REAL-WORLD AUTHORITY, POLICY, OR GOVERNMENT ACTION.
+        LEGAL DISCLAIMER: FOR THE AVOIDANCE OF DOUBT, THIS PORTAL IS A PRIVATE DIGITAL RESOURCE CREATED SOLELY FOR A FIVEM ROLEPLAY COMMUNITY AND IS INTENDED EXCLUSIVELY FOR FICTIONAL, ENTERTAINMENT, AND TRAINING-STYLE ROLEPLAY PURPOSES. THIS PROJECT IS NOT AFFILIATED WITH, ENDORSED BY, SPONSORED BY, OR OTHERWISE ASSOCIATED WITH THE FORT WORTH POLICE DEPARTMENT, NOR WITH ANY MUNICIPAL, COUNTY, STATE, FEDERAL, OR OTHER GOVERNMENTAL AGENCY OR ENTITY. ANY USE OF NAMES, TERMINOLOGY, TITLES, MARKINGS, OR INSIGNIA-LIKE REFERENCES IS STRICTLY FOR NON-OFFICIAL ROLEPLAY CONTEXT AND SHALL NOT BE CONSTRUED AS REPRESENTING REAL-WORLD AUTHORITY, OFFICIAL POLICY, OR GOVERNMENT ACTION. NORTH TEXAS ROLEPLAY (NTXRP), INCLUDING ITS OWNERS, STAFF, AND AFFILIATES, DISCLAIMS RESPONSIBILITY FOR ANY MISINTERPRETATION OF CONTENT OR PRESENTATION WITHIN THIS PORTAL AND SHALL COMPLY WITH ANY VALID LEGAL NOTICE, INCLUDING CEASE-AND-DESIST DEMANDS, AS REQUIRED BY APPLICABLE LAW.
       </div>
       <p>Only users listed in <b>Command_Users</b> can create accounts and log in.</p>
       <div style="font-size:12px;opacity:.85;margin-bottom:8px;">Build: ${APP_BUILD}</div>
@@ -978,6 +988,7 @@ document.getElementById("content").innerHTML = `
   <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
     <input id="calendarDate" type="date">
     <input id="calendarTime" type="time" value="09:00">
+    <select id="calendarEventTimezone" style="min-width:220px"></select>
     <input id="calendarTitle" type="text" placeholder="Event title" style="min-width:220px;flex:1">
   </div>
   <textarea id="calendarNote" rows="2" placeholder="Optional notes" style="width:100%;margin-top:8px"></textarea>
@@ -987,20 +998,35 @@ document.getElementById("content").innerHTML = `
   </div>
 </div>
 
+<div style="margin-top:10px;border:1px solid rgba(255,255,255,.2);padding:10px;background:rgba(0,0,0,.15)">
+  <b>Display Timezone</b>
+  <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+    <select id="calendarViewTimezone" style="min-width:260px"></select>
+    <span style="font-size:13px;opacity:.88">Calendar times are shown in your selected timezone.</span>
+  </div>
+</div>
+
 <pre id="calendarStatus" style="margin-top:10px;white-space:pre-wrap;background:rgba(0,0,0,.2);padding:10px;border:1px solid rgba(255,255,255,.2)">Loading events...</pre>
 
 <div style="margin-top:10px;overflow:auto">
   <table id="calendarTable">
-    <thead><tr><th>Date</th><th>Time</th><th>Event</th><th>Notes</th><th>By</th><th>Action</th></tr></thead>
+    <thead><tr><th>Date</th><th>Time</th><th>Event</th><th>Notes</th><th>By</th><th>Source TZ</th><th>Action</th></tr></thead>
     <tbody></tbody>
   </table>
 </div>
 `;
 
+initCalendarTimezoneSelectors();
+
 const addBtn = document.getElementById('calendarAddBtn');
 if (addBtn) addBtn.addEventListener('click', addCalendarEvent);
 const refreshBtn = document.getElementById('calendarRefreshBtn');
 if (refreshBtn) refreshBtn.addEventListener('click', loadCalendarEvents);
+const viewTzEl = document.getElementById('calendarViewTimezone');
+if (viewTzEl) viewTzEl.addEventListener('change', () => {
+  try { localStorage.setItem(CALENDAR_VIEW_TIMEZONE_KEY, viewTzEl.value || DEFAULT_CALENDAR_TIMEZONE); } catch (e) {}
+  loadCalendarEvents();
+});
 loadCalendarEvents();
 
 }
@@ -2440,32 +2466,35 @@ async function loadCalendarEvents() {
   const body = document.querySelector('#calendarTable tbody');
   const status = document.getElementById('calendarStatus');
   if (!body) return;
-  body.innerHTML = '<tr><td colspan="6">Loading...</td></tr>';
+  body.innerHTML = '<tr><td colspan="7">Loading...</td></tr>';
   try {
     const response = await authFetch('/api/calendar/events');
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Failed to load calendar');
     const rows = Array.isArray(data.items) ? data.items : [];
+    const viewTz = getCalendarViewTimezone();
     if (!rows.length) {
-      body.innerHTML = '<tr><td colspan="6">No events scheduled.</td></tr>';
+      body.innerHTML = '<tr><td colspan="7">No events scheduled.</td></tr>';
       if (status) status.textContent = 'No events scheduled.';
       return;
     }
     body.innerHTML = rows.map((ev) => {
       const canDelete = hasLeadershipAccessClient(currentUser) || normalizeEmailClient(currentUser && currentUser.email) === normalizeEmailClient(ev.createdByEmail);
       const action = canDelete ? ('<button onclick="deleteCalendarEvent(\'' + escapeHtml(ev.id) + '\')">Delete</button>') : '-';
+      const when = formatCalendarEventForTimezone(ev, viewTz);
       return '<tr>' +
-        '<td>' + escapeHtml(ev.date || '-') + '</td>' +
-        '<td>' + escapeHtml(ev.time || '-') + '</td>' +
+        '<td>' + escapeHtml(when.date) + '</td>' +
+        '<td>' + escapeHtml(when.time) + '</td>' +
         '<td>' + escapeHtml(ev.title || '-') + '</td>' +
         '<td>' + escapeHtml(ev.note || '-') + '</td>' +
         '<td>' + escapeHtml(ev.createdBy || '-') + '</td>' +
+        '<td>' + escapeHtml(ev.timezone || DEFAULT_CALENDAR_TIMEZONE) + '</td>' +
         '<td>' + action + '</td>' +
       '</tr>';
     }).join('');
-    if (status) status.textContent = 'Scheduled events: ' + rows.length;
+    if (status) status.textContent = 'Scheduled events: ' + rows.length + ' | viewing times in ' + viewTz;
   } catch (err) {
-    body.innerHTML = '<tr><td colspan="6">' + escapeHtml(err.message) + '</td></tr>';
+    body.innerHTML = '<tr><td colspan="7">' + escapeHtml(err.message) + '</td></tr>';
     if (status) status.textContent = 'Calendar load failed: ' + err.message;
   }
 }
@@ -2473,6 +2502,7 @@ async function loadCalendarEvents() {
 async function addCalendarEvent() {
   const date = String((document.getElementById('calendarDate') || {}).value || '').trim();
   const time = String((document.getElementById('calendarTime') || {}).value || '').trim();
+  const timezone = String((document.getElementById('calendarEventTimezone') || {}).value || '').trim() || DEFAULT_CALENDAR_TIMEZONE;
   const title = String((document.getElementById('calendarTitle') || {}).value || '').trim();
   const note = String((document.getElementById('calendarNote') || {}).value || '').trim();
   const status = document.getElementById('calendarStatus');
@@ -2480,7 +2510,7 @@ async function addCalendarEvent() {
     const response = await authFetch('/api/calendar/events', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ date, time, title, note })
+      body: JSON.stringify({ date, time, timezone, title, note })
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Add event failed');
@@ -2493,6 +2523,67 @@ async function addCalendarEvent() {
   } catch (err) {
     if (status) status.textContent = 'Add event failed: ' + err.message;
   }
+}
+
+function getCalendarViewTimezone() {
+  let tz = DEFAULT_CALENDAR_TIMEZONE;
+  try {
+    tz = String(localStorage.getItem(CALENDAR_VIEW_TIMEZONE_KEY) || DEFAULT_CALENDAR_TIMEZONE);
+  } catch (e) {
+    tz = DEFAULT_CALENDAR_TIMEZONE;
+  }
+  if (!isValidTimeZoneClient(tz)) return DEFAULT_CALENDAR_TIMEZONE;
+  return tz;
+}
+
+function initCalendarTimezoneSelectors() {
+  const eventTzEl = document.getElementById('calendarEventTimezone');
+  const viewTzEl = document.getElementById('calendarViewTimezone');
+  const optionsHtml = CALENDAR_TIMEZONE_OPTIONS.map((opt) => (
+    '<option value="' + escapeHtml(opt.value) + '">' + escapeHtml(opt.label) + '</option>'
+  )).join('');
+
+  if (eventTzEl) {
+    eventTzEl.innerHTML = optionsHtml;
+    eventTzEl.value = DEFAULT_CALENDAR_TIMEZONE;
+  }
+  if (viewTzEl) {
+    viewTzEl.innerHTML = optionsHtml;
+    viewTzEl.value = getCalendarViewTimezone();
+  }
+}
+
+function isValidTimeZoneClient(timeZone) {
+  try {
+    Intl.DateTimeFormat('en-US', { timeZone: String(timeZone || '') }).format(new Date());
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function formatCalendarEventForTimezone(ev, viewTimeZone) {
+  const dateRaw = String(ev && ev.date || '').trim();
+  const timeRaw = String(ev && ev.time || '').trim();
+  const tz = isValidTimeZoneClient(viewTimeZone) ? viewTimeZone : DEFAULT_CALENDAR_TIMEZONE;
+  const utcAt = String(ev && ev.utcAt || '').trim();
+  if (!utcAt) return { date: dateRaw || '-', time: timeRaw || '-' };
+  const d = new Date(utcAt);
+  if (Number.isNaN(d.getTime())) return { date: dateRaw || '-', time: timeRaw || '-' };
+
+  const dateText = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).format(d);
+  const timeText = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true
+  }).format(d);
+  return { date: dateText, time: timeText };
 }
 
 async function deleteCalendarEvent(id) {
