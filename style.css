@@ -77,7 +77,6 @@ body::after {
   padding: 12px 22px;
   border-bottom: 1px solid rgba(243, 188, 64, 0.45);
   background:
-    url('images/texasflag.png') center center/100% 100% no-repeat,
     linear-gradient(90deg, rgba(243, 188, 64, 0.13) 0%, rgba(142, 215, 255, 0.09) 36%, transparent 68%),
     linear-gradient(180deg, rgba(5, 20, 43, 0.97), rgba(8, 29, 62, 0.94));
   box-shadow: 0 16px 34px rgba(0, 0, 0, 0.42), inset 0 -1px 0 rgba(142, 215, 255, 0.2);
