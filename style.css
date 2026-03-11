@@ -22,48 +22,19 @@
   box-sizing: border-box;
 }
 
+
 body {
-  position: relative;
   margin: 0;
   color: var(--text-main);
   min-height: 100vh;
   font-family: 'Rajdhani', 'Trebuchet MS', sans-serif;
-  background:
-    radial-gradient(860px 460px at 88% -5%, rgba(243, 188, 64, 0.16), transparent 62%),
-    radial-gradient(680px 420px at -12% 112%, rgba(210, 74, 67, 0.12), transparent 66%),
-    linear-gradient(160deg, var(--bg-main) 0%, var(--bg-deep) 45%, var(--bg-slate) 100%),
-    url('images/fwpd_patch.png') center center / min(123vh, 1290px) no-repeat;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
+  background: linear-gradient(160deg, var(--bg-main) 0%, var(--bg-deep) 45%, var(--bg-slate) 100%);
+  display: block;
 }
 
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  background:
-    repeating-linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0, rgba(255, 255, 255, 0.03) 1px, transparent 1px, transparent 4px),
-    radial-gradient(circle at center, rgba(6, 18, 42, 0.2) 0%, rgba(6, 18, 42, 0.76) 70%),
-    url('images/fwpd_patch.png') center center / min(123vh, 1290px) no-repeat;
-  opacity: 0.24;
-  filter: saturate(1.06) contrast(1.08);
-  z-index: 0;
-}
 
-body::after {
-  content: '';
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  background: url('images/ntxrp.png') center calc(50% + 380px) / min(30vw, 322px) no-repeat;
-  opacity: 0.34;
-  filter: contrast(1.06) saturate(0.88);
-  z-index: 0;
-}
+
+
 
 .header,
 .container {
@@ -229,13 +200,14 @@ body::after {
 
 .title {
   font-family: 'Barlow Condensed', 'Rajdhani', sans-serif;
-  font-size: clamp(38px, 6vw, 62px);
+  font-size: clamp(32px, 4vw, 48px);
   letter-spacing: 4px;
   text-transform: uppercase;
   text-align: center;
   line-height: 1.02;
   color: #d4af37;
-  text-shadow: 0 8px 18px rgba(0, 0, 0, 0.62), 0 0 20px rgba(0, 0, 0, 0.42);
+  text-shadow: 0 4px 10px rgba(0, 0, 0, 0.42);
+  margin: 0;
 }
 
 .header-datetime-tag {
