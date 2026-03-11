@@ -101,10 +101,11 @@ body::after {
 
 .header-tools {
   position: absolute;
-  right: 118px;
-  top: 22px;
+  right: 112px;
+  top: 50%;
+  transform: translateY(-50%);
   display: flex;
-  gap: 10px;
+  gap: 8px;
   align-items: center;
 }
 
@@ -113,22 +114,27 @@ body::after {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 88px;
-  padding: 6px 13px;
+  min-width: 82px;
+  padding: 6px 12px;
   font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.35px;
+  font-weight: 600;
+  letter-spacing: 0.25px;
   line-height: 1.2;
   color: #eaf5ff;
-  border: 1px solid rgba(179, 210, 236, 0.35);
-  border-radius: 999px;
-  background: linear-gradient(180deg, rgba(18, 52, 104, 0.94), rgba(9, 31, 67, 0.95));
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.34), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(179, 210, 236, 0.28);
+  border-radius: 7px;
+  background: rgba(9, 34, 70, 0.95);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.28);
+}
+
+.header-tool-btn:hover {
+  border-color: rgba(243, 188, 64, 0.55);
+  background: rgba(12, 41, 83, 0.98);
 }
 
 .header-notify-panel {
   position: absolute;
-  top: 46px;
+  top: calc(100% + 8px);
   right: 0;
   width: min(380px, calc(100vw - 26px));
   max-height: 260px;
@@ -141,21 +147,21 @@ body::after {
 }
 
 .header-bell-btn {
-  min-width: 46px;
-  width: 46px;
+  min-width: 40px;
+  width: 40px;
   padding: 6px;
   justify-content: center;
 }
 
 .tool-icon {
-  font-size: 16px;
+  font-size: 15px;
   line-height: 1;
 }
 
 .tool-count {
   position: absolute;
-  top: -6px;
-  right: -6px;
+  top: -5px;
+  right: -5px;
   min-width: 17px;
   height: 17px;
   padding: 0 4px;
@@ -242,7 +248,7 @@ body::after {
 
 .sidebar a:hover {
   color: #fff7d0;
-  transform: translateX(6px);
+  transform: none;
   background: linear-gradient(90deg, rgba(243, 188, 64, 0.22), rgba(210, 74, 67, 0.08));
 }
 
@@ -521,7 +527,8 @@ pre {
   .header-tools {
     top: auto;
     bottom: 8px;
-    right: 88px;
+    right: 84px;
+    transform: none;
   }
 
   .header-tool-btn {

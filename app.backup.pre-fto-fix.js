@@ -157,22 +157,27 @@ function ensureHeaderTools() {
   if (!header) return null;
 
   let tools = document.getElementById('headerTools');
-  if (tools) return tools;
-
-  tools = document.createElement('div');
-  tools.id = 'headerTools';
-  tools.className = 'header-tools';
-  tools.innerHTML = '' +
-    '<button id="headerNotifyBtn" class="header-tool-btn header-bell-btn" type="button" aria-label="Notifications"><span class="tool-icon" aria-hidden="true">&#128276;</span><span class="tool-count" aria-hidden="true"></span></button>' +
-    '<div id="headerNotifyPanel" class="header-notify-panel" hidden>No alerts.</div>' +
-    '<button id="headerAccountBtn" class="header-tool-btn" type="button">Account</button>' +
-    '<button id="headerLogoutBtn" class="header-tool-btn" type="button">Logout</button>';
-  header.appendChild(tools);
+  if (!tools) {
+    tools = document.createElement('div');
+    tools.id = 'headerTools';
+    tools.className = 'header-tools';
+    tools.innerHTML = '' +
+      '<button id="headerNotifyBtn" class="header-tool-btn header-bell-btn" type="button" aria-label="Notifications"><span class="tool-icon" aria-hidden="true">&#128276;</span><span class="tool-count" aria-hidden="true"></span></button>' +
+      '<div id="headerNotifyPanel" class="header-notify-panel" hidden>No alerts.</div>' +
+      '<button id="headerAccountBtn" class="header-tool-btn" type="button">Account</button>' +
+      '<button id="headerLogoutBtn" class="header-tool-btn" type="button">Logout</button>';
+    header.appendChild(tools);
+  }
 
   const notifyBtn = tools.querySelector('#headerNotifyBtn');
   const notifyPanel = tools.querySelector('#headerNotifyPanel');
   const accountBtn = tools.querySelector('#headerAccountBtn');
   const logoutBtn = tools.querySelector('#headerLogoutBtn');
+  const initialized = tools.getAttribute('data-initialized') === '1';
+
+  if (notifyBtn) notifyBtn.classList.add('header-bell-btn');
+
+  if (initialized) return tools;
 
   if (notifyBtn && notifyPanel) {
     notifyBtn.addEventListener('click', (event) => {
@@ -200,6 +205,8 @@ function ensureHeaderTools() {
     if (!notifyPanel || notifyPanel.hidden) return;
     if (!tools.contains(event.target)) notifyPanel.hidden = true;
   });
+
+  tools.setAttribute('data-initialized', '1');
 
   return tools;
 }
