@@ -273,7 +273,7 @@ function applyRuntimeLayoutFixes() {
       if (text === 'admin chat') {
         adminChatLink = link;
       }
-      if (text === 'discussions' || text === 'message board') {
+      if (text === 'discussions' || text === 'message board' || text === 'chat room' || text === 'chat') {
         discussionsLink = link;
       }
       if (text === 'calendar' || text === 'event calendar') {
@@ -298,8 +298,11 @@ function applyRuntimeLayoutFixes() {
     if (!discussionsLink) {
       discussionsLink = document.createElement('a');
       discussionsLink.setAttribute('href', "javascript:loadPage('discussions')");
-      discussionsLink.textContent = 'Discussions';
+      discussionsLink.textContent = 'Chat Room';
       sidebar.appendChild(discussionsLink);
+    } else {
+      discussionsLink.setAttribute('href', "javascript:loadPage('discussions')");
+      discussionsLink.textContent = 'Chat Room';
     }
 
     if (!calendarLink) {
@@ -425,7 +428,12 @@ function renderLoginScreen(statusText = '') {
       <div class="login-cli-subheader">SECURE SESSION REQUIRED</div>
       <h2>Command Login</h2>
       <div class="login-legal-disclaimer">
-        LEGAL DISCLAIMER: FOR THE AVOIDANCE OF DOUBT, THIS PORTAL IS A PRIVATE DIGITAL RESOURCE CREATED SOLELY FOR A FIVEM ROLEPLAY COMMUNITY AND IS INTENDED EXCLUSIVELY FOR FICTIONAL, ENTERTAINMENT, AND TRAINING-STYLE ROLEPLAY PURPOSES. THIS PROJECT IS NOT AFFILIATED WITH, ENDORSED BY, SPONSORED BY, OR OTHERWISE ASSOCIATED WITH THE FORT WORTH POLICE DEPARTMENT, NOR WITH ANY MUNICIPAL, COUNTY, STATE, FEDERAL, OR OTHER GOVERNMENTAL AGENCY OR ENTITY. ANY USE OF NAMES, TERMINOLOGY, TITLES, MARKINGS, OR INSIGNIA-LIKE REFERENCES IS STRICTLY FOR NON-OFFICIAL ROLEPLAY CONTEXT AND SHALL NOT BE CONSTRUED AS REPRESENTING REAL-WORLD AUTHORITY, OFFICIAL POLICY, OR GOVERNMENT ACTION. NORTH TEXAS ROLEPLAY (NTXRP), INCLUDING ITS OWNERS, STAFF, AND AFFILIATES, DISCLAIMS RESPONSIBILITY FOR ANY MISINTERPRETATION OF CONTENT OR PRESENTATION WITHIN THIS PORTAL AND SHALL COMPLY WITH ANY VALID LEGAL NOTICE, INCLUDING CEASE-AND-DESIST DEMANDS, AS REQUIRED BY APPLICABLE LAW.
+        <div class="login-legal-title">LEGAL NOTICE</div>
+        <div class="login-legal-summary">ROLEPLAY USE ONLY. THIS PORTAL IS NOT AFFILIATED WITH THE FORT WORTH POLICE DEPARTMENT OR ANY GOVERNMENT AGENCY.</div>
+        <details class="login-legal-details">
+          <summary>VIEW FULL LEGAL DISCLAIMER</summary>
+          <div class="login-legal-fulltext">FOR THE AVOIDANCE OF DOUBT, THIS PORTAL IS A PRIVATE DIGITAL RESOURCE CREATED SOLELY FOR A FIVEM ROLEPLAY COMMUNITY AND IS INTENDED EXCLUSIVELY FOR FICTIONAL, ENTERTAINMENT, AND TRAINING-STYLE ROLEPLAY PURPOSES. THIS PROJECT IS NOT AFFILIATED WITH, ENDORSED BY, SPONSORED BY, OR OTHERWISE ASSOCIATED WITH THE FORT WORTH POLICE DEPARTMENT, NOR WITH ANY MUNICIPAL, COUNTY, STATE, FEDERAL, OR OTHER GOVERNMENTAL AGENCY OR ENTITY. ANY USE OF NAMES, TERMINOLOGY, TITLES, MARKINGS, OR INSIGNIA-LIKE REFERENCES IS STRICTLY FOR NON-OFFICIAL ROLEPLAY CONTEXT AND SHALL NOT BE CONSTRUED AS REPRESENTING REAL-WORLD AUTHORITY, OFFICIAL POLICY, OR GOVERNMENT ACTION. NORTH TEXAS ROLEPLAY (NTXRP), INCLUDING ITS OWNERS, STAFF, AND AFFILIATES, DISCLAIMS RESPONSIBILITY FOR ANY MISINTERPRETATION OF CONTENT OR PRESENTATION WITHIN THIS PORTAL AND SHALL COMPLY WITH ANY VALID LEGAL NOTICE, INCLUDING CEASE-AND-DESIST DEMANDS, AS REQUIRED BY APPLICABLE LAW.</div>
+        </details>
       </div>
       <p>Only users listed in <b>Command_Users</b> can create accounts and log in.</p>
       <div style="font-size:12px;opacity:.85;margin-bottom:8px;">Build: ${APP_BUILD}</div>
@@ -906,8 +914,8 @@ loadInboxMessages();
 if(page === "discussions"){
 
 document.getElementById("content").innerHTML = `
-<h2>Discussions</h2>
-<p>Open command board for all members. Messages refresh automatically.</p>
+<h2>Chat Room</h2>
+<p>Open command chat room for all members. Messages refresh automatically.</p>
 
 <div class="discussion-chat-shell" style="margin-top:10px;">
   <div id="discussionMessages" class="discussion-chat-thread">Loading discussions...</div>
