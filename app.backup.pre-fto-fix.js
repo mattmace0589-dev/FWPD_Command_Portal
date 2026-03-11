@@ -124,6 +124,7 @@ function showAuthBanner() {
   const notifyPanel = document.getElementById('headerNotifyPanel');
 
   if (currentUser) {
+    tools.style.display = 'flex';
     if (accountBtn) {
       accountBtn.textContent = 'Account';
       accountBtn.disabled = false;
@@ -134,6 +135,7 @@ function showAuthBanner() {
       logoutBtn.style.display = 'inline-block';
     }
   } else {
+    tools.style.display = 'none';
     if (accountBtn) {
       accountBtn.textContent = 'Account';
       accountBtn.disabled = true;
@@ -347,7 +349,9 @@ function setAuthLockedLayout(locked) {
 function renderLoginScreen(statusText = '') {
   setAuthLockedLayout(true);
   document.getElementById('content').innerHTML = `
-    <div style="max-width:680px;margin:20px auto;border:1px solid rgba(255,255,255,.25);padding:18px;background:rgba(0,0,0,.15)">
+    <div class="login-shell" style="max-width:760px;margin:20px auto;">
+      <div class="login-cli-header">MDT ACCESS TERMINAL :: AUTHENTICATION</div>
+      <div class="login-cli-subheader">SECURE SESSION REQUIRED</div>
       <h2>Command Login</h2>
       <p>Only users listed in <b>Command_Users</b> can create accounts and log in.</p>
       <div style="font-size:12px;opacity:.85;margin-bottom:8px;">Build: ${APP_BUILD}</div>
@@ -581,8 +585,9 @@ setAuthLockedLayout(false);
 if(page === "dashboard"){
 
 document.getElementById("content").innerHTML = `
-<div id="welcomeMessage" style="margin-top:2px;margin-bottom:10px;color:#d8f3ff"></div>
 <h2>Command Dashboard</h2>
+
+<div id="welcomeMessage" style="margin-top:2px;margin-bottom:10px;color:#d8f3ff"></div>
 
 <div style="margin-top:10px;border:1px solid rgba(255,255,255,.2);padding:12px;background:rgba(0,0,0,.15)">
   <div style="margin:0 0 12px 0;color:#f3bc40;font-family:'Barlow Condensed','Trebuchet MS',sans-serif;font-size:24px;letter-spacing:.5px;line-height:1.1">FORT WORTH POLICE DEPARTMENT - MISSION STATEMENT</div>
@@ -590,7 +595,6 @@ document.getElementById("content").innerHTML = `
   <p style="margin:0;line-height:1.45">We strive to maintain a safe and thriving city by working collaboratively with our residents, embracing innovation, and holding ourselves to the highest standards of conduct. Every member of this department is dedicated to acting with courage, compassion, and honor in the pursuit of justice.</p>
 </div>
 
-<p style="margin-top:18px;color:#f4cf76">Use the top-right Bell for active alerts and notifications.</p>
 `;
 
 if (currentUser) {

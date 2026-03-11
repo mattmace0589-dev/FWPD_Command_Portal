@@ -1,11 +1,13 @@
-@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Space+Mono:wght@400;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Rajdhani:wght@500;600;700&family=Space+Mono:wght@400;700&display=swap');
 
 :root {
   --bg-main: #06122a;
   --bg-deep: #0c2550;
   --bg-slate: #123468;
+  --bg-steel: #0a1f43;
   --panel: rgba(8, 35, 72, 0.86);
   --panel-soft: rgba(10, 41, 82, 0.74);
+  --panel-hard: rgba(6, 26, 55, 0.93);
   --line: rgba(179, 210, 236, 0.24);
   --line-strong: rgba(243, 188, 64, 0.92);
   --text-main: #edf7ff;
@@ -13,6 +15,7 @@
   --accent: #f3bc40;
   --action: #8ed7ff;
   --danger: #d24a43;
+  --glow: rgba(142, 215, 255, 0.18);
 }
 
 * {
@@ -24,12 +27,11 @@ body {
   margin: 0;
   color: var(--text-main);
   min-height: 100vh;
-  font-family: 'Space Mono', 'Consolas', monospace;
+  font-family: 'Rajdhani', 'Trebuchet MS', sans-serif;
   background:
-    radial-gradient(900px 500px at 90% -10%, rgba(243, 188, 64, 0.18), transparent 62%),
-    radial-gradient(700px 430px at -15% 112%, rgba(210, 74, 67, 0.14), transparent 66%),
-    repeating-linear-gradient(150deg, rgba(255, 255, 255, 0.02) 0px, rgba(255, 255, 255, 0.02) 2px, transparent 2px, transparent 16px),
-    linear-gradient(160deg, var(--bg-main) 0%, var(--bg-deep) 48%, var(--bg-slate) 100%);
+    radial-gradient(860px 460px at 88% -5%, rgba(243, 188, 64, 0.16), transparent 62%),
+    radial-gradient(680px 420px at -12% 112%, rgba(210, 74, 67, 0.12), transparent 66%),
+    linear-gradient(160deg, var(--bg-main) 0%, var(--bg-deep) 45%, var(--bg-slate) 100%);
 }
 
 body::before {
@@ -38,9 +40,10 @@ body::before {
   inset: 0;
   pointer-events: none;
   background:
-    radial-gradient(circle at center, rgba(6, 18, 42, 0.18) 0%, rgba(6, 18, 42, 0.72) 70%),
+    repeating-linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0, rgba(255, 255, 255, 0.03) 1px, transparent 1px, transparent 4px),
+    radial-gradient(circle at center, rgba(6, 18, 42, 0.2) 0%, rgba(6, 18, 42, 0.76) 70%),
     url('images/fwpd_patch.png') center center / min(123vh, 1290px) no-repeat;
-  opacity: 0.26;
+  opacity: 0.24;
   filter: saturate(1.06) contrast(1.08);
   z-index: 0;
 }
@@ -71,9 +74,11 @@ body::after {
   align-items: center;
   gap: 16px;
   padding: 10px 20px;
-  border-bottom: 2px solid var(--line-strong);
-  background: linear-gradient(180deg, rgba(7, 22, 49, 0.97), rgba(11, 37, 78, 0.93));
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.38);
+  border-bottom: 1px solid rgba(243, 188, 64, 0.55);
+  background:
+    linear-gradient(90deg, rgba(142, 215, 255, 0.08), transparent 32%),
+    linear-gradient(180deg, rgba(6, 22, 46, 0.98), rgba(9, 33, 70, 0.95));
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.42), inset 0 -1px 0 rgba(142, 215, 255, 0.24);
   animation: headerDrop 420ms ease-out;
 }
 
@@ -182,13 +187,13 @@ body::after {
 }
 
 .title {
-  font-family: 'Barlow Condensed', 'Impact', sans-serif;
+  font-family: 'Barlow Condensed', 'Rajdhani', sans-serif;
   font-size: clamp(28px, 4.2vw, 46px);
-  letter-spacing: 5px;
+  letter-spacing: 3px;
   text-transform: uppercase;
   text-align: center;
   line-height: 1;
-  text-shadow: 0 6px 14px rgba(0, 0, 0, 0.46);
+  text-shadow: 0 6px 14px rgba(0, 0, 0, 0.46), 0 0 18px rgba(142, 215, 255, 0.28);
 }
 
 .container {
@@ -198,10 +203,11 @@ body::after {
 
 .sidebar {
   position: relative;
-  width: 250px;
-  padding: 14px 0;
-  border-right: 1px solid var(--line);
-  background: linear-gradient(180deg, rgba(7, 22, 49, 0.95), rgba(11, 37, 78, 0.92));
+  width: 238px;
+  padding: 10px 0;
+  border-right: 1px solid rgba(142, 215, 255, 0.3);
+  background:
+    linear-gradient(180deg, rgba(7, 22, 49, 0.96), rgba(11, 37, 78, 0.95));
 }
 
 .sidebar::before {
@@ -216,12 +222,14 @@ body::after {
 
 .sidebar a {
   display: block;
-  padding: 13px 18px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   color: var(--text-main);
   text-decoration: none;
-  font-size: 13px;
-  letter-spacing: 0.55px;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  font-weight: 600;
   transition: transform 0.18s ease, background-color 0.18s ease, color 0.18s ease;
   animation: navReveal 360ms ease both;
 }
@@ -240,7 +248,9 @@ body::after {
 
 .content {
   flex: 1;
-  padding: 24px;
+  padding: 18px;
+  background: linear-gradient(180deg, rgba(5, 20, 41, 0.5), rgba(8, 28, 58, 0.34));
+  border-left: 1px solid rgba(142, 215, 255, 0.16);
   animation: contentRise 420ms ease-out;
 }
 
@@ -248,20 +258,23 @@ h2,
 h3,
 b,
 th {
-  font-family: 'Barlow Condensed', 'Trebuchet MS', sans-serif;
+  font-family: 'Barlow Condensed', 'Rajdhani', sans-serif;
   letter-spacing: 0.45px;
 }
 
 h2 {
-  margin: 0 0 8px 0;
-  font-size: clamp(30px, 4.2vw, 42px);
+  margin: 0 0 12px 0;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(142, 215, 255, 0.3);
+  font-size: clamp(30px, 4.2vw, 40px);
 }
 
 table {
   width: 100%;
   border-collapse: collapse;
-  background: var(--panel);
-  border: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(7, 31, 64, 0.94), rgba(6, 27, 56, 0.9));
+  border: 1px solid rgba(142, 215, 255, 0.22);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.24);
 }
 
 #rosterTable {
@@ -270,16 +283,17 @@ table {
 
 th {
   color: var(--accent);
-  border-bottom: 2px solid var(--line-strong);
-  font-size: 26px;
+  border-bottom: 1px solid var(--line-strong);
+  font-size: 20px;
   font-weight: 700;
   padding: 10px;
+  background: rgba(5, 22, 47, 0.86);
 }
 
 td {
   padding: 10px;
   vertical-align: middle;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.13);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 tr:hover td {
@@ -306,31 +320,40 @@ button,
 select,
 input,
 textarea {
-  font-family: inherit;
+  font-family: 'Rajdhani', 'Trebuchet MS', sans-serif;
 }
 
 button {
   cursor: pointer;
-  color: #0a2b44;
-  border: 1px solid #a7c1d4;
-  background: linear-gradient(180deg, #fbfdff, #dce7ef);
-  padding: 5px 10px;
-  transition: border-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+  color: #eaf5ff;
+  border: 1px solid rgba(142, 215, 255, 0.36);
+  border-radius: 6px;
+  background: linear-gradient(180deg, rgba(19, 54, 107, 0.95), rgba(9, 31, 67, 0.98));
+  padding: 6px 11px;
+  font-weight: 700;
+  letter-spacing: 0.35px;
+  transition: border-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease;
 }
 
 button:hover {
-  border-color: var(--danger);
+  border-color: var(--line-strong);
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.24), 0 0 0 1px rgba(243, 188, 64, 0.35) inset;
+  box-shadow: 0 6px 15px rgba(0, 0, 0, 0.26), 0 0 0 1px rgba(243, 188, 64, 0.24) inset;
 }
 
 input,
 select,
 textarea {
-  color: #0b2c47;
-  border: 1px solid #9bb4c8;
-  background: rgba(243, 248, 252, 0.97);
+  color: #ecf7ff;
+  border: 1px solid rgba(142, 215, 255, 0.34);
+  border-radius: 4px;
+  background: rgba(6, 27, 56, 0.96);
   padding: 5px 7px;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: rgba(189, 211, 230, 0.72);
 }
 
 textarea {
@@ -339,8 +362,9 @@ textarea {
 
 pre {
   color: var(--text-main);
-  background: var(--panel-soft);
-  border: 1px solid var(--line);
+  background: var(--panel-hard);
+  border: 1px solid rgba(142, 215, 255, 0.24);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
 }
 
 .report-open-btn {
@@ -378,6 +402,46 @@ pre {
 
 .profile-link:hover {
   color: #ffffff;
+}
+
+.login-shell {
+  border: 1px solid rgba(142, 215, 255, 0.36);
+  background: linear-gradient(180deg, rgba(4, 20, 43, 0.94), rgba(8, 31, 64, 0.9));
+  box-shadow: 0 16px 30px rgba(0, 0, 0, 0.38), inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  padding: 16px;
+}
+
+.login-cli-header {
+  font-family: 'Space Mono', 'Consolas', monospace;
+  font-size: 12px;
+  letter-spacing: 1.1px;
+  color: var(--accent);
+  text-transform: uppercase;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  border: 1px solid rgba(243, 188, 64, 0.34);
+  background: rgba(243, 188, 64, 0.08);
+}
+
+.login-cli-subheader {
+  font-family: 'Space Mono', 'Consolas', monospace;
+  font-size: 11px;
+  letter-spacing: 0.7px;
+  color: #a8d0ec;
+  margin-bottom: 10px;
+}
+
+.login-shell h2 {
+  margin-top: 2px;
+}
+
+.login-shell label,
+.login-shell p,
+.login-shell span,
+.login-shell pre,
+.login-shell input,
+.login-shell textarea {
+  font-family: 'Space Mono', 'Consolas', monospace;
 }
 
 @keyframes headerDrop {
