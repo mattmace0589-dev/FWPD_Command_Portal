@@ -161,7 +161,7 @@ function ensureHeaderTools() {
   tools.id = 'headerTools';
   tools.className = 'header-tools';
   tools.innerHTML = '' +
-    '<button id="headerNotifyBtn" class="header-tool-btn" type="button">Bell</button>' +
+    '<button id="headerNotifyBtn" class="header-tool-btn header-bell-btn" type="button" aria-label="Notifications"><span class="tool-icon" aria-hidden="true">&#128276;</span><span class="tool-count" aria-hidden="true"></span></button>' +
     '<div id="headerNotifyPanel" class="header-notify-panel" hidden>No alerts.</div>' +
     '<button id="headerAccountBtn" class="header-tool-btn" type="button">Account</button>' +
     '<button id="headerLogoutBtn" class="header-tool-btn" type="button">Logout</button>';
@@ -211,7 +211,9 @@ function setHeaderAlerts(lines) {
 
   const alertCount = headerAlertLines.length;
   notifyBtn.disabled = !isLoggedIn();
-  notifyBtn.textContent = alertCount > 0 ? ('Bell (' + alertCount + ')') : 'Bell';
+  const countBadge = alertCount > 0 ? ('<span class="tool-count" aria-hidden="true">' + alertCount + '</span>') : '<span class="tool-count" aria-hidden="true"></span>';
+  notifyBtn.innerHTML = '<span class="tool-icon" aria-hidden="true">&#128276;</span>' + countBadge;
+  notifyBtn.setAttribute('aria-label', alertCount > 0 ? ('Notifications (' + alertCount + ')') : 'Notifications');
   notifyBtn.title = 'Unread messages: ' + String(unreadMessageCount || 0);
 
   if (!headerAlertLines.length) {
@@ -250,6 +252,7 @@ function applyRuntimeLayoutFixes() {
 
     links = Array.from(sidebar.querySelectorAll('a'));
     const accountLink = links.find((link) => String(link.textContent || '').trim().toLowerCase() === 'account');
+    if (accountLink) accountLink.remove();
 
     if (!messagesLink) {
       messagesLink = document.createElement('a');

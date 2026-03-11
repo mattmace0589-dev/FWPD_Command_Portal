@@ -7,7 +7,7 @@
 
 <title>FWPD Command Portal</title>
 
-<link rel="stylesheet" href="style.css?v=20260310z01">
+<link rel="stylesheet" href="style.css?v=20260310z04">
 
 </head>
 
@@ -27,6 +27,13 @@ FWPD COMMAND PORTAL
 <img src="images/fwpd_badge.png">
 </div>
 
+<div id="headerTools" class="header-tools">
+<button id="headerNotifyBtn" class="header-tool-btn" type="button" aria-label="Notifications">&#128276;</button>
+<div id="headerNotifyPanel" class="header-notify-panel" hidden>No alerts.</div>
+<button id="headerAccountBtn" class="header-tool-btn" type="button">Account</button>
+<button id="headerLogoutBtn" class="header-tool-btn" type="button">Logout</button>
+</div>
+
 </div>
 
 
@@ -39,20 +46,19 @@ FWPD COMMAND PORTAL
 <a href="javascript:loadPage('reports')">Reports</a>
 <a href="javascript:loadPage('messages')">Messages</a>
 <a href="javascript:loadPage('fto')">FTO</a>
-<a href="javascript:loadPage('account')">Account</a>
 
 </div>
 
 
 <div class="content" id="content">
 
-Welcome to the FWPD Command Portal.
+Loading portal...
 
 </div>
 
 </div>
 
-<script src="app.js?v=20260310z02"></script>
+<script src="app.js?v=20260310z04"></script>
 
 </body>
 
