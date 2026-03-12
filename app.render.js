@@ -920,10 +920,7 @@ document.getElementById("content").innerHTML = `
 `;
 
 if (currentUser) {
-  const welcome = document.getElementById('welcomeMessage');
-  if (welcome) {
-    welcome.textContent = 'Welcome ' + formatUserDisplayName(currentUser) + '.';
-  }
+  // Removed welcome message after login
 }
 
 loadDashboardAlerts();
