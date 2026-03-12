@@ -1,3 +1,13 @@
+// Render health check endpoint
+app.get('/health', (req, res) => {
+  res.json({
+    ok: true,
+    service: 'FWPD Command Portal',
+    time: new Date().toISOString(),
+    bootedAt: BOOTED_AT,
+    uptimeSeconds: Math.floor(process.uptime())
+  });
+});
 process.on('exit', (code) => {
   console.error('Process exit event with code:', code);
 });
