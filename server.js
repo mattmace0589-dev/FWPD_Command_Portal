@@ -1,36 +1,7 @@
-// Render health check endpoint
-app.get('/health', (req, res) => {
-  res.json({
-    ok: true,
-    service: 'FWPD Command Portal',
-    time: new Date().toISOString(),
-    bootedAt: BOOTED_AT,
-    uptimeSeconds: Math.floor(process.uptime())
-  });
-});
-process.on('exit', (code) => {
-  console.error('Process exit event with code:', code);
-});
-process.on('beforeExit', (code) => {
-  console.error('Process beforeExit event with code:', code);
-});
-process.on('uncaughtException', function (err) {
-  console.error('Uncaught Exception:', err);
-});
-process.on('unhandledRejection', function (reason, promise) {
-  console.error('Unhandled Rejection:', reason);
-});
-console.log('FWPD Portal: server.js starting...');
-console.log('FWPD Portal: server.js starting...');
-console.log('Loaded express');
 const express = require('express');
-console.log('Loaded fs');
 const fs = require('fs');
-console.log('Loaded path');
 const path = require('path');
-console.log('Loaded cors');
 const cors = require('cors');
-console.log('Loaded crypto');
 const crypto = require('crypto');
 // Utility to sanitize tab names (removes unwanted characters, trims whitespace)
 function sanitizeName(name) {
@@ -44,6 +15,18 @@ try {
 }
 
 const app = express();
+const app = express();
+
+// Render health check endpoint (must be after app is defined)
+app.get('/health', (req, res) => {
+  res.json({
+    ok: true,
+    service: 'FWPD Command Portal',
+    time: new Date().toISOString(),
+    bootedAt: BOOTED_AT,
+    uptimeSeconds: Math.floor(process.uptime())
+  });
+});
 const PORT = process.env.PORT || 3000;
 const BOOTED_AT = new Date().toISOString();
 const AUTH_SECRET = String(process.env.AUTH_SECRET || 'fwpd-default-auth-secret-change-me');
@@ -3079,38 +3062,16 @@ async function startServer() {
 
   try {
     await initDatabasePersistence();
-    console.log('Database persistence initialized.');
-  } catch (err) {
-    console.error('DB initialization failed. Continuing with file-based persistence only.', err.message || String(err));
-  }
-
-  try {
     await autoSyncSheetsOnStartup();
-    console.log('autoSyncSheetsOnStartup completed.');
+    await ensureCommandUsersLoaded();
   } catch (err) {
-    console.error('autoSyncSheetsOnStartup failed:', err.message || String(err));
+    // If DB fails, continue with file-based persistence
   }
-
-  try {
-    const commandUsers = await ensureCommandUsersLoaded();
-    console.log('Command_Users ready:', Array.isArray(commandUsers) ? commandUsers.length : 0, 'records');
-  } catch (err) {
-    console.error('Command_Users warm-load failed:', err.message || String(err));
-  }
-
-  console.log('FWPD Portal: About to listen on port', PORT);
-  try {
-    app.listen(PORT, () => {
-      console.log('Server running on http://localhost:' + PORT);
-    });
-    console.log('app.listen call completed (should not exit here unless error).');
-  } catch (err) {
-    console.error('Error during app.listen:', err.message || String(err));
-  }
+  app.listen(PORT, () => {
+    // Server started
+  });
 }
 
-startServer().catch((err) => {
-  console.error('Fatal error in startServer:', err && err.stack ? err.stack : err);
-});
+startServer();
 // Added to fix missing closing brace error
 }
