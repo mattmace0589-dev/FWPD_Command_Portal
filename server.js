@@ -3060,13 +3060,20 @@ async function autoSyncSheetsOnStartup() {
 }
 
 async function startServer() {
+
   try {
     await initDatabasePersistence();
+    console.log('Database persistence initialized.');
   } catch (err) {
     console.error('DB initialization failed. Continuing with file-based persistence only.', err.message || String(err));
   }
 
-  await autoSyncSheetsOnStartup();
+  try {
+    await autoSyncSheetsOnStartup();
+    console.log('autoSyncSheetsOnStartup completed.');
+  } catch (err) {
+    console.error('autoSyncSheetsOnStartup failed:', err.message || String(err));
+  }
 
   try {
     const commandUsers = await ensureCommandUsersLoaded();
@@ -3076,9 +3083,14 @@ async function startServer() {
   }
 
   console.log('FWPD Portal: About to listen on port', PORT);
-  app.listen(PORT, () => {
-    console.log('Server running on http://localhost:' + PORT);
-  });
+  try {
+    app.listen(PORT, () => {
+      console.log('Server running on http://localhost:' + PORT);
+    });
+    console.log('app.listen call completed (should not exit here unless error).');
+  } catch (err) {
+    console.error('Error during app.listen:', err.message || String(err));
+  }
 }
 
 startServer();
