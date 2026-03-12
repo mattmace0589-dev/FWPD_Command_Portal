@@ -262,6 +262,28 @@ function applyRuntimeLayoutFixes() {
     let ftoLink = null;
     let promotionRecLink = null;
     let highCommandApprovalLink = null;
+    let trainingRecordsLink = null;
+    let disciplineRecordsLink = null;
+          if (text === 'training records') {
+            trainingRecordsLink = link;
+          }
+          if (text === 'discipline records') {
+            disciplineRecordsLink = link;
+          }
+        // Add Training Records link
+        if (!trainingRecordsLink) {
+          trainingRecordsLink = document.createElement('a');
+          trainingRecordsLink.setAttribute('href', "javascript:loadPage('training-records')");
+          trainingRecordsLink.textContent = 'Training Records';
+          sidebar.appendChild(trainingRecordsLink);
+        }
+        // Add Discipline Records link
+        if (!disciplineRecordsLink) {
+          disciplineRecordsLink = document.createElement('a');
+          disciplineRecordsLink.setAttribute('href', "javascript:loadPage('discipline-records')");
+          disciplineRecordsLink.textContent = 'Discipline Records';
+          sidebar.appendChild(disciplineRecordsLink);
+        }
     links.forEach((link) => {
       const text = String(link.textContent || '').trim().toLowerCase();
       if (text === 'sheet tabs') {
@@ -385,14 +407,28 @@ function applyRuntimeLayoutFixes() {
     const countText = unreadMessageCount > 0 ? ('Messages (' + unreadMessageCount + ')') : 'Messages';
     messagesLink.textContent = countText;
 
+    // Remove sidebar build tag if present
     let footer = document.getElementById('sidebarBuildTag');
-    if (!footer) {
-      footer = document.createElement('div');
-      footer.id = 'sidebarBuildTag';
-      footer.className = 'sidebar-build-tag';
-      sidebar.appendChild(footer);
+    if (footer) footer.remove();
+
+    // Add build tag to header under time
+    const title = document.querySelector('.title');
+    if (title) {
+      let buildTag = document.getElementById('headerBuildTag');
+      if (!buildTag) {
+        buildTag = document.createElement('div');
+        buildTag.id = 'headerBuildTag';
+        buildTag.className = 'header-build-tag';
+        // Insert after title (and after time if present)
+        let afterNode = title.nextSibling;
+        // If the next sibling is the time tag, insert after that
+        if (afterNode && afterNode.id === 'headerDateTimeTag') {
+          afterNode = afterNode.nextSibling;
+        }
+        title.parentNode.insertBefore(buildTag, afterNode);
+      }
+      buildTag.textContent = 'Build ' + APP_BUILD;
     }
-    footer.textContent = 'Build ' + APP_BUILD;
   }
 
   const title = document.querySelector('.title');
@@ -713,6 +749,150 @@ async function ensureDataTabsSynced() {
 }
 
 function loadPage(page){
+// TRAINING RECORDS PAGE
+if(page === "training-records"){
+  document.getElementById("content").innerHTML = `
+    <h2>Training Records</h2>
+    <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <label>Status</label>
+      <select id="trainingStatusFilter">
+        <option value="all">All</option>
+        <option value="approved">Approved</option>
+        <option value="pending">Pending</option>
+        <option value="denied">Denied</option>
+      </select>
+      <label>Officer</label>
+      <input id="trainingOfficerFilter" type="text" placeholder="Search officer name" style="min-width:200px">
+      <button id="refreshTrainingBtn">Refresh</button>
+    </div>
+    <div style="margin-top:10px;overflow:auto">
+      <table id="trainingTable">
+        <thead>
+          <tr>
+            <th>Subject</th>
+            <th>Officer</th>
+            <th>Date</th>
+            <th>Status</th>
+            <th>Approved By</th>
+            <th>Approved At</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  `;
+  loadTrainingRecords();
+  document.getElementById('refreshTrainingBtn').addEventListener('click', loadTrainingRecords);
+  document.getElementById('trainingStatusFilter').addEventListener('change', loadTrainingRecords);
+  document.getElementById('trainingOfficerFilter').addEventListener('input', loadTrainingRecords);
+  return;
+}
+
+// DISCIPLINE RECORDS PAGE
+if(page === "discipline-records"){
+  document.getElementById("content").innerHTML = `
+    <h2>Discipline Records</h2>
+    <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <label>Status</label>
+      <select id="disciplineStatusFilter">
+        <option value="all">All</option>
+        <option value="approved">Approved</option>
+        <option value="pending">Pending</option>
+        <option value="denied">Denied</option>
+      </select>
+      <label>Officer</label>
+      <input id="disciplineOfficerFilter" type="text" placeholder="Search officer name" style="min-width:200px">
+      <button id="refreshDisciplineBtn">Refresh</button>
+    </div>
+    <div style="margin-top:10px;overflow:auto">
+      <table id="disciplineTable">
+        <thead>
+          <tr>
+            <th>Subject</th>
+            <th>Officer</th>
+            <th>Date</th>
+            <th>Status</th>
+            <th>Approved By</th>
+            <th>Approved At</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  `;
+  loadDisciplineRecords();
+  document.getElementById('refreshDisciplineBtn').addEventListener('click', loadDisciplineRecords);
+  document.getElementById('disciplineStatusFilter').addEventListener('change', loadDisciplineRecords);
+  document.getElementById('disciplineOfficerFilter').addEventListener('input', loadDisciplineRecords);
+  return;
+}
+// Load and render approved training records
+async function loadTrainingRecords() {
+  const tableBody = document.querySelector('#trainingTable tbody');
+  if (!tableBody) return;
+  const statusFilter = document.getElementById('trainingStatusFilter').value;
+  const officerFilter = document.getElementById('trainingOfficerFilter').value.trim().toLowerCase();
+  tableBody.innerHTML = '<tr><td colspan="6">Loading...</td></tr>';
+  try {
+    const response = await authFetch('/api/reports/items?type=training&status=' + encodeURIComponent(statusFilter));
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Failed to load training records');
+    let items = Array.isArray(data.items) ? data.items : [];
+    if (officerFilter) {
+      items = items.filter(item => String(item.officerName || '').toLowerCase().includes(officerFilter));
+    }
+    if (!items.length) {
+      tableBody.innerHTML = '<tr><td colspan="6">No training records found.</td></tr>';
+      return;
+    }
+    tableBody.innerHTML = items.map(item =>
+      `<tr>
+        <td>${escapeHtml(item.subject || '-')}</td>
+        <td>${escapeHtml(item.officerName || '-')}</td>
+        <td>${escapeHtml(item.reportDate || '-')}</td>
+        <td>${escapeHtml(item.approvalStatus || '-')}</td>
+        <td>${escapeHtml(item.approvedBy || '-')}</td>
+        <td>${escapeHtml(formatDateTime(item.approvedAt || ''))}</td>
+      </tr>`
+    ).join('');
+  } catch (err) {
+    tableBody.innerHTML = '<tr><td colspan="6">Unable to load training records: ' + escapeHtml(err.message) + '</td></tr>';
+  }
+}
+
+// Load and render approved discipline records
+async function loadDisciplineRecords() {
+  const tableBody = document.querySelector('#disciplineTable tbody');
+  if (!tableBody) return;
+  const statusFilter = document.getElementById('disciplineStatusFilter').value;
+  const officerFilter = document.getElementById('disciplineOfficerFilter').value.trim().toLowerCase();
+  tableBody.innerHTML = '<tr><td colspan="6">Loading...</td></tr>';
+  try {
+    const response = await authFetch('/api/reports/items?type=discipline&status=' + encodeURIComponent(statusFilter));
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Failed to load discipline records');
+    let items = Array.isArray(data.items) ? data.items : [];
+    if (officerFilter) {
+      items = items.filter(item => String(item.officerName || '').toLowerCase().includes(officerFilter));
+    }
+    if (!items.length) {
+      tableBody.innerHTML = '<tr><td colspan="6">No discipline records found.</td></tr>';
+      return;
+    }
+    tableBody.innerHTML = items.map(item =>
+      `<tr>
+        <td>${escapeHtml(item.subject || '-')}</td>
+        <td>${escapeHtml(item.officerName || '-')}</td>
+        <td>${escapeHtml(item.reportDate || '-')}</td>
+        <td>${escapeHtml(item.approvalStatus || '-')}</td>
+        <td>${escapeHtml(item.approvedBy || '-')}</td>
+        <td>${escapeHtml(formatDateTime(item.approvedAt || ''))}</td>
+      </tr>`
+    ).join('');
+  } catch (err) {
+    tableBody.innerHTML = '<tr><td colspan="6">Unable to load discipline records: ' + escapeHtml(err.message) + '</td></tr>';
+  }
+}
 applyRuntimeLayoutFixes();
 stopDiscussionLiveRefresh();
 if(!isLoggedIn()){
@@ -2287,9 +2467,8 @@ async function loginAccount() {
     setAuthToken(data.token || '');
     await refreshAuthSession();
     loadPage('dashboard');
-    const welcome = 'Login successful. Welcome ' + formatUserDisplayName(currentUser) + '.';
-    if (status) status.textContent = welcome;
-    alert(welcome);
+    // Removed welcome message and alert after login
+    if (status) status.textContent = '';
   } catch (err) {
     if (status) status.textContent = 'Login failed: ' + err.message;
   }

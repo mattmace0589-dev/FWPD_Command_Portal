@@ -3,6 +3,10 @@ const fs = require('fs');
 const path = require('path');
 const cors = require('cors');
 const crypto = require('crypto');
+// Utility to sanitize tab names (removes unwanted characters, trims whitespace)
+function sanitizeName(name) {
+  return String(name || '').replace(/[^a-zA-Z0-9_\- ]/g, '').trim();
+}
 let PgPool = null;
 try {
   ({ Pool: PgPool } = require('pg'));
@@ -107,7 +111,49 @@ async function dbUpsertPortalSetting(key, value) {
      DO UPDATE SET value_json = EXCLUDED.value_json, updated_at = EXCLUDED.updated_at`,
     [String(key), JSON.stringify(value || {}), new Date().toISOString()]
   );
-}
+  // --- Email setup ---
+  const nodemailer = require('nodemailer');
+  const SMTP_HOST = process.env.SMTP_HOST || '';
+  const SMTP_PORT = process.env.SMTP_PORT || 587;
+  const SMTP_USER = process.env.SMTP_USER || '';
+  const SMTP_PASS = process.env.SMTP_PASS || '';
+  const SMTP_FROM = process.env.SMTP_FROM || 'FWPD Portal <noreply@localhost>';
+
+  let mailTransport = null;
+  if (SMTP_HOST && SMTP_USER && SMTP_PASS) {
+    mailTransport = nodemailer.createTransport({
+      host: SMTP_HOST,
+      port: Number(SMTP_PORT),
+      secure: false,
+      auth: {
+        user: SMTP_USER,
+        pass: SMTP_PASS
+      }
+    });
+  }
+
+  async function sendPasswordResetEmail(to, resetBy, tempPassword) {
+    if (!mailTransport) return;
+    const mailOptions = {
+      from: SMTP_FROM,
+      to,
+      subject: 'Your FWPD Portal password was reset',
+      text: `Hello,
+
+Your FWPD Portal password was reset by: ${resetBy}
+Your new temporary password is: ${tempPassword}
+
+Please log in and change your password as soon as possible.
+
+If you did not request this change, please contact your administrator immediately.
+`
+    };
+    try {
+      await mailTransport.sendMail(mailOptions);
+    } catch (e) {
+      console.error('Failed to send password reset email:', e);
+    }
+  }
 
 async function initDatabasePersistence() {
   if (!DB_ENABLED) {
@@ -1788,6 +1834,9 @@ app.post('/api/auth/admin-reset-password', requireAuth, async (req, res) => {
     saveJsonFile(USERS_FILE, users);
     await dbUpsertUserRecord(users[idx]);
 
+    // Send email notification to the user
+    await sendPasswordResetEmail(targetEmail, req.auth.email, newPassword);
+
     return res.json({ ok: true, message: 'Password reset for ' + targetEmail + '.' });
   } catch (err) {
     return res.status(500).json({ error: err.message || String(err) });
@@ -2641,6 +2690,7 @@ app.post('/api/reports/:id/approval', requireAuth, (req, res) => {
   }
 });
 
+
 app.delete('/api/reports/:id', requireAuth, (req, res) => {
   try {
     if (!hasLeadershipAccess(req.auth)) {
@@ -2651,36 +2701,40 @@ app.delete('/api/reports/:id', requireAuth, (req, res) => {
     if (!id) return res.status(400).json({ error: 'Report id is required.' });
 
     const built = buildReportItems();
-    const item = built.items.find((x) => String(x && x.id || '') === id);
-    if (!item) return res.status(404).json({ error: 'Report item not found.' });
+    const itemsToDelete = built.items.filter((x) => String(x && x.id || '') === id);
+    if (!itemsToDelete.length) return res.status(404).json({ error: 'Report item not found.' });
 
-    const rows = readTabRecords(item.sourceTab);
-    if (!Array.isArray(rows) || !rows.length) {
-      return res.status(404).json({ error: 'Source tab rows not found for report.' });
-    }
-
-    let deleteIdx = -1;
-    for (let idx = 0; idx < rows.length; idx += 1) {
-      const row = rows[idx] || {};
-      const fingerprint = buildReportFingerprint(row, item.type) || (item.sourceTab + '|' + idx);
-      const candidateId = stableHash(item.sourceTab + '|' + fingerprint);
-      if (candidateId === id) {
-        deleteIdx = idx;
-        break;
+    // Remove from all tabs where this report exists
+    let deletedFromTabs = [];
+    for (const item of itemsToDelete) {
+      const rows = readTabRecords(item.sourceTab);
+      if (!Array.isArray(rows) || !rows.length) continue;
+      let deleteIdx = -1;
+      for (let idx = 0; idx < rows.length; idx += 1) {
+        const row = rows[idx] || {};
+        const fingerprint = buildReportFingerprint(row, item.type) || (item.sourceTab + '|' + idx);
+        const candidateId = stableHash(item.sourceTab + '|' + fingerprint);
+        if (candidateId === id) {
+          deleteIdx = idx;
+          break;
+        }
+      }
+      if (deleteIdx >= 0) {
+        const nextRows = rows.slice(0, deleteIdx).concat(rows.slice(deleteIdx + 1));
+        writeTabRecords(item.sourceTab, nextRows);
+        deletedFromTabs.push(item.sourceTab);
       }
     }
 
-    if (deleteIdx < 0) {
-      return res.status(404).json({ error: 'Unable to map report to source row.' });
-    }
-
-    const nextRows = rows.slice(0, deleteIdx).concat(rows.slice(deleteIdx + 1));
-    writeTabRecords(item.sourceTab, nextRows);
-
+    // Remove from approvals
     const approvals = loadReportApprovals().filter((a) => String(a && a.id || '') !== id);
     saveReportApprovals(approvals);
 
-    return res.json({ ok: true, deletedId: id, sourceTab: item.sourceTab });
+    if (!deletedFromTabs.length) {
+      return res.status(404).json({ error: 'Unable to map report to any source row.' });
+    }
+
+    return res.json({ ok: true, deletedId: id, deletedFromTabs });
   } catch (err) {
     return res.status(500).json({ error: err.message || String(err) });
   }
@@ -3014,3 +3068,5 @@ async function startServer() {
 }
 
 startServer();
+// Added to fix missing closing brace error
+}
