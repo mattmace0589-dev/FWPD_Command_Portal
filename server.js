@@ -148,6 +148,15 @@ async function dbUpsertPortalSetting(key, value) {
         pass: SMTP_PASS
       }
     });
+  }
+
+  async function sendPasswordResetEmail(to, resetBy, tempPassword) {
+    if (!mailTransport) return;
+    const mailOptions = {
+      from: SMTP_FROM,
+      to,
+      subject: 'Your FWPD Portal password was reset',
+      text: `Hello,
 
 Your FWPD Portal password was reset by: ${resetBy}
 Your new temporary password is: ${tempPassword}
@@ -157,6 +166,12 @@ Please log in and change your password as soon as possible.
 If you did not request this change, please contact your administrator immediately.
 `
     };
+    try {
+      await mailTransport.sendMail(mailOptions);
+    } catch (e) {
+      console.error('Failed to send password reset email:', e);
+    }
+  }
     try {
       await mailTransport.sendMail(mailOptions);
     } catch (e) {
