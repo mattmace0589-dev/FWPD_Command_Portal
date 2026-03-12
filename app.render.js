@@ -909,14 +909,12 @@ if(page === "dashboard"){
 document.getElementById("content").innerHTML = `
 <h2>Command Dashboard</h2>
 
-<div id="welcomeMessage" style="margin-top:2px;margin-bottom:10px;color:#d8f3ff"></div>
-
 <div style="margin-top:10px;border:1px solid rgba(255,255,255,.2);padding:12px;background:rgba(0,0,0,.15)">
   <div style="margin:0 0 12px 0;color:#f3bc40;font-family:'Barlow Condensed','Trebuchet MS',sans-serif;font-size:24px;letter-spacing:.5px;line-height:1.1">FORT WORTH POLICE DEPARTMENT - MISSION STATEMENT</div>
   <p style="margin-top:8px;margin-bottom:10px;line-height:1.45">The Fort Worth Police Department is committed to safeguarding our community through integrity, professionalism, and unwavering service. Our mission is to protect life and property, uphold the law with fairness and respect, and strengthen public trust through transparency and accountability.</p>
   <p style="margin:0;line-height:1.45">We strive to maintain a safe and thriving city by working collaboratively with our residents, embracing innovation, and holding ourselves to the highest standards of conduct. Every member of this department is dedicated to acting with courage, compassion, and honor in the pursuit of justice.</p>
 </div>
-
+`;
 `;
 
 if (currentUser) {
@@ -2435,9 +2433,8 @@ async function createAccount() {
     setAuthToken(data.token || '');
     await refreshAuthSession();
     loadPage('dashboard');
-    const welcome = 'Account created. Welcome ' + formatUserDisplayName(currentUser) + '.';
-    if (status) status.textContent = welcome;
-    alert(welcome);
+    // Removed welcome message and alert after account creation
+    if (status) status.textContent = '';
   } catch (err) {
     const base = String(err && err.message || 'Create account failed');
     const hint = /command_users|email not found/i.test(base)
