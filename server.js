@@ -5,6 +5,7 @@ process.on('unhandledRejection', function (reason, promise) {
   console.error('Unhandled Rejection:', reason);
 });
 console.log('FWPD Portal: server.js starting...');
+console.log('FWPD Portal: server.js starting...');
 console.log('Loaded express');
 const express = require('express');
 console.log('Loaded fs');
@@ -14,12 +15,6 @@ const path = require('path');
 console.log('Loaded cors');
 const cors = require('cors');
 console.log('Loaded crypto');
-const crypto = require('crypto');
-console.log('FWPD Portal: server.js starting...');
-const express = require('express');
-const fs = require('fs');
-const path = require('path');
-const cors = require('cors');
 const crypto = require('crypto');
 // Utility to sanitize tab names (removes unwanted characters, trims whitespace)
 function sanitizeName(name) {
