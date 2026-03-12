@@ -1,3 +1,10 @@
+process.on('uncaughtException', function (err) {
+  console.error('Uncaught Exception:', err);
+});
+process.on('unhandledRejection', function (reason, promise) {
+  console.error('Unhandled Rejection:', reason);
+});
+console.log('FWPD Portal: server.js starting...');
 console.log('FWPD Portal: server.js starting...');
 const express = require('express');
 const fs = require('fs');
