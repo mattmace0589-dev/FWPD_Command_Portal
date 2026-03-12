@@ -21,6 +21,30 @@ try {
   PgPool = null;
 }
 
+
+// Startup diagnostics for Render troubleshooting
+console.log('FWPD Command Portal starting...');
+console.log('Node version:', process.version);
+console.log('Working directory:', process.cwd());
+console.log('Key environment variables:');
+console.log('  PORT:', process.env.PORT);
+console.log('  DATABASE_URL:', process.env.DATABASE_URL ? '[set]' : '[not set]');
+console.log('  SMTP_HOST:', process.env.SMTP_HOST);
+console.log('  SMTP_USER:', process.env.SMTP_USER);
+console.log('  SMTP_FROM:', process.env.SMTP_FROM);
+console.log('  AUTH_SECRET:', process.env.AUTH_SECRET ? '[set]' : '[not set]');
+try {
+  const dataDir = path.join(__dirname, 'data');
+  if (!fs.existsSync(dataDir)) {
+    fs.mkdirSync(dataDir);
+    console.log('Created data directory:', dataDir);
+  } else {
+    console.log('Data directory exists:', dataDir);
+  }
+} catch (e) {
+  console.error('Failed to create/check data directory:', e);
+}
+
 const app = express();
 
 // Render health check endpoint (must be after app is defined)
