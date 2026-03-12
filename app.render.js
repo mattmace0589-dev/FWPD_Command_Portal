@@ -396,14 +396,7 @@ function applyRuntimeLayoutFixes() {
     const countText = unreadMessageCount > 0 ? ('Messages (' + unreadMessageCount + ')') : 'Messages';
     messagesLink.textContent = countText;
 
-    let footer = document.getElementById('sidebarBuildTag');
-    if (!footer) {
-      footer = document.createElement('div');
-      footer.id = 'sidebarBuildTag';
-      footer.className = 'sidebar-build-tag';
-      sidebar.appendChild(footer);
-    }
-    footer.textContent = 'Build ' + APP_BUILD;
+    // Removed sidebar build tag
   }
 
   const title = document.querySelector('.title');
@@ -416,6 +409,17 @@ function applyRuntimeLayoutFixes() {
       title.appendChild(dateTimeTag);
     }
 
+    let buildTag = document.getElementById('headerBuildTag');
+    if (!buildTag) {
+      buildTag = document.createElement('div');
+      buildTag.id = 'headerBuildTag';
+      buildTag.className = 'header-build-tag';
+      buildTag.style.fontSize = '11px';
+      buildTag.style.opacity = '0.7';
+      buildTag.style.marginTop = '2px';
+      title.appendChild(buildTag);
+    }
+
     const updateDateTime = () => {
       const now = new Date();
       dateTimeTag.textContent = now.toLocaleString('en-US', {
@@ -425,6 +429,7 @@ function applyRuntimeLayoutFixes() {
         hour: '2-digit',
         minute: '2-digit'
       });
+      buildTag.textContent = 'Build 32';
     };
     updateDateTime();
     if (!headerClockTimer) {
