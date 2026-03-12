@@ -262,6 +262,7 @@ function applyRuntimeLayoutFixes() {
     let ftoLink = null;
     let promotionRecLink = null;
     let highCommandApprovalLink = null;
+    let trainingLink = null;
     links.forEach((link) => {
       const text = String(link.textContent || '').trim().toLowerCase();
       if (text === 'sheet tabs') {
@@ -291,6 +292,16 @@ function applyRuntimeLayoutFixes() {
       if (text === 'high command approval') {
         highCommandApprovalLink = link;
       }
+      if (text === 'training') {
+        trainingLink = link;
+      }
+        // Add Training tab for all users
+        if (!trainingLink) {
+          trainingLink = document.createElement('a');
+          trainingLink.setAttribute('href', "javascript:loadPage('training')");
+          trainingLink.textContent = 'Training';
+          sidebar.appendChild(trainingLink);
+        }
     });
 
     links = Array.from(sidebar.querySelectorAll('a'));
@@ -713,6 +724,62 @@ async function ensureDataTabsSynced() {
 }
 
 function loadPage(page){
+
+if(page === "training"){
+  document.getElementById("content").innerHTML = `
+    <h2>Training Reports</h2>
+    <p>All approved training reports are listed below.</p>
+    <div style="margin-top:10px;overflow:auto">
+      <table id="trainingReportsTable">
+        <thead>
+          <tr>
+            <th>Subject</th>
+            <th>Officer</th>
+            <th>Date</th>
+            <th>Status</th>
+            <th>Approved By</th>
+            <th>Approved At</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <pre id="trainingReportsStatus" style="margin-top:10px;white-space:pre-wrap;background:rgba(0,0,0,.2);padding:10px;border:1px solid rgba(255,255,255,.2)">Loading training reports...</pre>
+  `;
+  loadApprovedTrainingReports();
+}
+
+// ...existing code...
+
+async function loadApprovedTrainingReports() {
+  const status = document.getElementById('trainingReportsStatus');
+  const tbody = document.querySelector('#trainingReportsTable tbody');
+  if (status) status.textContent = 'Loading training reports...';
+  if (tbody) tbody.innerHTML = '';
+  try {
+    const response = await authFetch('/api/reports/items?type=training&status=approved');
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Failed to load reports');
+    const reports = Array.isArray(data.items) ? data.items : [];
+    if (reports.length === 0) {
+      if (status) status.textContent = 'No approved training reports found.';
+      return;
+    }
+    if (status) status.textContent = '';
+    tbody.innerHTML = reports.map(r => `
+      <tr>
+        <td>${escapeHtml(r.subject || '')}</td>
+        <td>${escapeHtml(r.officerName || '')}</td>
+        <td>${escapeHtml(r.date || '')}</td>
+        <td>${escapeHtml(r.approvalStatus || '')}</td>
+        <td>${escapeHtml(r.approvedBy || '')}</td>
+        <td>${escapeHtml(r.approvedAt || '')}</td>
+      </tr>
+    `).join('');
+  } catch (err) {
+    if (status) status.textContent = 'Error loading training reports: ' + err.message;
+  }
+}
 applyRuntimeLayoutFixes();
 stopDiscussionLiveRefresh();
 if(!isLoggedIn()){
