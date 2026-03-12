@@ -15,7 +15,6 @@ try {
 }
 
 const app = express();
-const app = express();
 
 // Render health check endpoint (must be after app is defined)
 app.get('/health', (req, res) => {
