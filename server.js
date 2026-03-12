@@ -1,3 +1,10 @@
+// Global error handlers to catch fatal errors
+process.on('uncaughtException', function (err) {
+  console.error('Uncaught Exception:', err);
+});
+process.on('unhandledRejection', function (reason, promise) {
+  console.error('Unhandled Rejection:', reason);
+});
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
@@ -136,19 +143,30 @@ async function dbUpsertPortalSetting(key, value) {
       host: SMTP_HOST,
       port: Number(SMTP_PORT),
       secure: false,
+      console.log('FWPD Portal: Starting server...');
       auth: {
+        console.log('Initializing database persistence...');
         user: SMTP_USER,
+        console.log('Database persistence initialized.');
+        console.log('Syncing sheets on startup...');
         pass: SMTP_PASS
+        console.log('Sheets sync complete.');
+        console.log('Ensuring command users loaded...');
       }
+        console.log('Command users loaded.');
     });
-  }
+        console.error('Startup error (DB or sheets):', err && err.stack ? err.stack : err);
+        // If DB fails, continue with file-based persistence
 
+      console.log('Listening on port', PORT);
   async function sendPasswordResetEmail(to, resetBy, tempPassword) {
-    if (!mailTransport) return;
+        console.log('Server started on http://localhost:' + PORT);
     const mailOptions = {
       from: SMTP_FROM,
       to,
-      subject: 'Your FWPD Portal password was reset',
+    startServer().catch((err) => {
+      console.error('Fatal error in startServer:', err && err.stack ? err.stack : err);
+    });
       text: `Hello,
 
 Your FWPD Portal password was reset by: ${resetBy}
@@ -3071,6 +3089,3 @@ async function startServer() {
   });
 }
 
-startServer();
-// Added to fix missing closing brace error
-}
