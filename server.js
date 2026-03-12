@@ -1,3 +1,15 @@
+// Global process exit/error handlers for Render troubleshooting
+process.on('exit', (code) => {
+  console.error('[EXIT] Process exited with code:', code);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[FATAL] Uncaught Exception:', err);
+  process.exit(1);
+});
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[FATAL] Unhandled Rejection:', reason);
+  process.exit(1);
+});
 // Global error handlers to catch fatal errors
 process.on('uncaughtException', function (err) {
   console.error('Uncaught Exception:', err);
