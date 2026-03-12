@@ -6,7 +6,6 @@ const AUTH_TOKEN_KEY = 'fwpd_auth_token';
 const COMMAND_USERS_SOURCE_URL_KEY = 'fwpd_command_users_source_url';
 const DISCIPLINE_SOURCE_URL_KEY = 'fwpd_discipline_source_url';
 const EVALUATION_SOURCE_URL_KEY = 'fwpd_evaluation_source_url';
-const CALENDAR_VIEW_TIMEZONE_KEY = 'fwpd_calendar_view_timezone';
 const AUTO_COMMAND_USERS_LINK_KEY = 'fwpd_command_users_auto_linked';
 const DEFAULT_COMMAND_USERS_SOURCE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR6_40O35zd-9GMo_nTg5KS76Svzt1P8ZKrfBQwPAtLloGFtpE1r4JBP3t-F-meLlDKCpvWzZkhMlOb/pubhtml?gid=1476592599&single=true';
 const DEFAULT_ROSTER_SOURCE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR6_40O35zd-9GMo_nTg5KS76Svzt1P8ZKrfBQwPAtLloGFtpE1r4JBP3t-F-meLlDKCpvWzZkhMlOb/pubhtml?gid=757275616&single=true';
@@ -15,26 +14,13 @@ const DEFAULT_EVALUATION_SOURCE_URL = 'https://docs.google.com/spreadsheets/d/e/
 const PORTAL_OWNER_EMAILS = ['mattprz89@gmail.com'];
 const APP_BUILD = '20260309z32';
 const MESSAGE_POLL_MS = 45000;
-const DISCUSSION_POLL_MS = 4000;
-const DEFAULT_CALENDAR_TIMEZONE = 'America/New_York';
-
-const CALENDAR_TIMEZONE_OPTIONS = [
-  { value: 'America/New_York', label: 'EST / EDT (US Eastern)' },
-  { value: 'America/Chicago', label: 'CST / CDT (US Central)' },
-  { value: 'America/Denver', label: 'MST / MDT (US Mountain)' },
-  { value: 'America/Los_Angeles', label: 'PST / PDT (US Pacific)' },
-  { value: 'UTC', label: 'UTC' }
-];
 
 let currentUser = null;
 let unreadMessageCount = 0;
 let messagePollTimer = null;
 let lastLoadedReportItems = [];
 let dataAutoSyncPromise = null;
-let ftoListLoadToken = 0;
 let headerAlertLines = [];
-let discussionPollTimer = null;
-let headerClockTimer = null;
 
 function formatUserDisplayName(user) {
   const rank = String((user && user.rank) || '').trim();
@@ -79,7 +65,7 @@ function hasLeadershipAccessClient(user) {
 
 function hasAdminAccessClient(user) {
   const role = String((user && user.role) || '');
-  return normalizeAccessRoleClient(role) === 'admin' || isPortalOwnerClient(user);
+  return isPrivilegedRoleClient(role) || isPortalOwnerClient(user);
 }
 
 function normalizeAccessRoleClient(roleText) {
@@ -256,12 +242,7 @@ function applyRuntimeLayoutFixes() {
     let links = Array.from(sidebar.querySelectorAll('a'));
     let messagesLink = null;
     let adminLink = null;
-    let adminChatLink = null;
-    let discussionsLink = null;
-    let calendarLink = null;
     let ftoLink = null;
-    let promotionRecLink = null;
-    let highCommandApprovalLink = null;
     links.forEach((link) => {
       const text = String(link.textContent || '').trim().toLowerCase();
       if (text === 'sheet tabs') {
@@ -273,23 +254,8 @@ function applyRuntimeLayoutFixes() {
       if (text === 'admin') {
         adminLink = link;
       }
-      if (text === 'admin chat') {
-        adminChatLink = link;
-      }
-      if (text === 'discussions' || text === 'message board' || text === 'chat room' || text === 'chat') {
-        discussionsLink = link;
-      }
-      if (text === 'calendar' || text === 'event calendar') {
-        calendarLink = link;
-      }
       if (text === 'fto') {
         ftoLink = link;
-      }
-      if (text === 'promotion recommendations') {
-        promotionRecLink = link;
-      }
-      if (text === 'high command approval') {
-        highCommandApprovalLink = link;
       }
     });
 
@@ -301,124 +267,50 @@ function applyRuntimeLayoutFixes() {
       messagesLink = document.createElement('a');
       messagesLink.setAttribute('href', "javascript:loadPage('messages')");
       messagesLink.textContent = 'Messages';
-      sidebar.appendChild(messagesLink);
-    }
-
-    if (!discussionsLink) {
-      discussionsLink = document.createElement('a');
-      discussionsLink.setAttribute('href', "javascript:loadPage('discussions')");
-      discussionsLink.textContent = 'Chat Room';
-      sidebar.appendChild(discussionsLink);
-    } else {
-      discussionsLink.setAttribute('href', "javascript:loadPage('discussions')");
-      discussionsLink.textContent = 'Chat Room';
-    }
-
-    if (!calendarLink) {
-      calendarLink = document.createElement('a');
-      calendarLink.setAttribute('href', "javascript:loadPage('calendar')");
-      calendarLink.textContent = 'Calendar';
-      sidebar.appendChild(calendarLink);
+      if (accountLink) sidebar.insertBefore(messagesLink, accountLink);
+      else sidebar.appendChild(messagesLink);
     }
 
     const showAdmin = !!currentUser && hasAdminAccessClient(currentUser);
     const showFto = !!currentUser && hasLeadershipAccessClient(currentUser);
-    const showHighCommand = !!currentUser && hasLeadershipAccessClient(currentUser);
     if (showAdmin && !adminLink) {
       adminLink = document.createElement('a');
       adminLink.setAttribute('href', "javascript:loadPage('admin')");
       adminLink.textContent = 'Admin';
-      sidebar.appendChild(adminLink);
+      if (accountLink) sidebar.insertBefore(adminLink, accountLink);
+      else sidebar.appendChild(adminLink);
     }
     if (!showAdmin && adminLink) {
       adminLink.remove();
-    }
-
-    if (showAdmin && !adminChatLink) {
-      adminChatLink = document.createElement('a');
-      adminChatLink.setAttribute('href', "javascript:loadPage('adminchat')");
-      adminChatLink.textContent = 'Admin Chat';
-      sidebar.appendChild(adminChatLink);
-    }
-    if (!showAdmin && adminChatLink) {
-      adminChatLink.remove();
     }
 
     if (showFto && !ftoLink) {
       ftoLink = document.createElement('a');
       ftoLink.setAttribute('href', "javascript:loadPage('fto')");
       ftoLink.textContent = 'FTO';
-      sidebar.appendChild(ftoLink);
+      if (accountLink) sidebar.insertBefore(ftoLink, accountLink);
+      else sidebar.appendChild(ftoLink);
     }
     if (!showFto && ftoLink) {
       ftoLink.remove();
     }
 
-    if (showHighCommand && !promotionRecLink) {
-      promotionRecLink = document.createElement('a');
-      promotionRecLink.setAttribute('href', "javascript:loadPage('promotion-recommendations')");
-      promotionRecLink.textContent = 'Promotion Recommendations';
-      sidebar.appendChild(promotionRecLink);
-    }
-    if (showHighCommand && promotionRecLink) {
-      promotionRecLink.setAttribute('href', "javascript:loadPage('promotion-recommendations')");
-      promotionRecLink.textContent = 'Promotion Recommendations';
-    }
-    if (!showHighCommand && promotionRecLink) {
-      promotionRecLink.remove();
-    }
-
-    if (showHighCommand && !highCommandApprovalLink) {
-      highCommandApprovalLink = document.createElement('a');
-      highCommandApprovalLink.setAttribute('href', "javascript:loadPage('high-command-approval')");
-      highCommandApprovalLink.textContent = 'High Command Approval';
-      sidebar.appendChild(highCommandApprovalLink);
-    }
-    if (showHighCommand && highCommandApprovalLink) {
-      highCommandApprovalLink.setAttribute('href', "javascript:loadPage('high-command-approval')");
-      highCommandApprovalLink.textContent = 'High Command Approval';
-    }
-    if (!showHighCommand && highCommandApprovalLink) {
-      highCommandApprovalLink.remove();
-    }
-
     const countText = unreadMessageCount > 0 ? ('Messages (' + unreadMessageCount + ')') : 'Messages';
     messagesLink.textContent = countText;
-
-    let footer = document.getElementById('sidebarBuildTag');
-    if (!footer) {
-      footer = document.createElement('div');
-      footer.id = 'sidebarBuildTag';
-      footer.className = 'sidebar-build-tag';
-      sidebar.appendChild(footer);
-    }
-    footer.textContent = 'Build ' + APP_BUILD;
   }
 
   const title = document.querySelector('.title');
   if (title) {
-    let dateTimeTag = document.getElementById('headerDateTimeTag');
-    if (!dateTimeTag) {
-      dateTimeTag = document.createElement('div');
-      dateTimeTag.id = 'headerDateTimeTag';
-      dateTimeTag.className = 'header-datetime-tag';
-      title.appendChild(dateTimeTag);
+    let tag = document.getElementById('appBuildTag');
+    if (!tag) {
+      tag = document.createElement('div');
+      tag.id = 'appBuildTag';
+      tag.style.fontSize = '11px';
+      tag.style.opacity = '0.9';
+      tag.style.marginTop = '2px';
+      title.appendChild(tag);
     }
-
-    const updateDateTime = () => {
-      const now = new Date();
-      dateTimeTag.textContent = now.toLocaleString('en-US', {
-        month: 'long',
-        day: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-    };
-    updateDateTime();
-    if (!headerClockTimer) {
-      headerClockTimer = setInterval(updateDateTime, 30000);
-    }
+    tag.textContent = 'Build ' + APP_BUILD;
   }
 }
 
@@ -429,29 +321,11 @@ function stopMessagePolling() {
   }
 }
 
-function startDiscussionLiveRefresh() {
-  stopDiscussionLiveRefresh();
-  discussionPollTimer = setInterval(() => {
-    if (!isLoggedIn()) return;
-    const thread = document.getElementById('discussionMessages');
-    if (!thread) return;
-    loadDiscussionMessages({ preserveScroll: true, silent: true });
-  }, DISCUSSION_POLL_MS);
-}
-
-function stopDiscussionLiveRefresh() {
-  if (discussionPollTimer) {
-    clearInterval(discussionPollTimer);
-    discussionPollTimer = null;
-  }
-}
-
 function startMessagePolling() {
   stopMessagePolling();
   messagePollTimer = setInterval(() => {
     if (!isLoggedIn()) return;
     loadUnreadMessageCount();
-    checkCalendarReminders();
   }, MESSAGE_POLL_MS);
 }
 
@@ -482,19 +356,12 @@ function setAuthLockedLayout(locked) {
 function renderLoginScreen(statusText = '') {
   setAuthLockedLayout(true);
   document.getElementById('content').innerHTML = `
-    <div class="login-shell" style="max-width:1060px;margin:20px auto;">
+    <div class="login-shell" style="max-width:760px;margin:20px auto;">
       <div class="login-cli-header">MDT ACCESS TERMINAL :: AUTHENTICATION</div>
       <div class="login-cli-subheader">SECURE SESSION REQUIRED</div>
       <h2>Command Login</h2>
-      <div class="login-legal-disclaimer">
-        <div class="login-legal-title">LEGAL NOTICE</div>
-        <div class="login-legal-summary">ROLEPLAY USE ONLY. THIS PORTAL IS NOT AFFILIATED WITH THE FORT WORTH POLICE DEPARTMENT OR ANY GOVERNMENT AGENCY.</div>
-        <details class="login-legal-details">
-          <summary>VIEW FULL LEGAL DISCLAIMER</summary>
-          <div class="login-legal-fulltext">FOR THE AVOIDANCE OF DOUBT, THIS PORTAL IS A PRIVATE DIGITAL RESOURCE CREATED SOLELY FOR A FIVEM ROLEPLAY COMMUNITY AND IS INTENDED EXCLUSIVELY FOR FICTIONAL, ENTERTAINMENT, AND TRAINING-STYLE ROLEPLAY PURPOSES. THIS PROJECT IS NOT AFFILIATED WITH, ENDORSED BY, SPONSORED BY, OR OTHERWISE ASSOCIATED WITH THE FORT WORTH POLICE DEPARTMENT, NOR WITH ANY MUNICIPAL, COUNTY, STATE, FEDERAL, OR OTHER GOVERNMENTAL AGENCY OR ENTITY. ANY USE OF NAMES, TERMINOLOGY, TITLES, MARKINGS, OR INSIGNIA-LIKE REFERENCES IS STRICTLY FOR NON-OFFICIAL ROLEPLAY CONTEXT AND SHALL NOT BE CONSTRUED AS REPRESENTING REAL-WORLD AUTHORITY, OFFICIAL POLICY, OR GOVERNMENT ACTION. NORTH TEXAS ROLEPLAY (NTXRP), INCLUDING ITS OWNERS, STAFF, AND AFFILIATES, DISCLAIMS RESPONSIBILITY FOR ANY MISINTERPRETATION OF CONTENT OR PRESENTATION WITHIN THIS PORTAL AND SHALL COMPLY WITH ANY VALID LEGAL NOTICE, INCLUDING CEASE-AND-DESIST DEMANDS, AS REQUIRED BY APPLICABLE LAW.</div>
-        </details>
-      </div>
       <p>Only users listed in <b>Command_Users</b> can create accounts and log in.</p>
+      <div style="font-size:12px;opacity:.85;margin-bottom:8px;">Build: ${APP_BUILD}</div>
 
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin:10px 0 16px 0;">
         <button id="showLoginPane">Login</button>
@@ -663,7 +530,6 @@ async function refreshAuthSession() {
   }
 
   await loadUnreadMessageCount();
-  await checkCalendarReminders();
   startMessagePolling();
 
   // On initial authenticated load, land on dashboard.
@@ -714,7 +580,6 @@ async function ensureDataTabsSynced() {
 
 function loadPage(page){
 applyRuntimeLayoutFixes();
-stopDiscussionLiveRefresh();
 if(!isLoggedIn()){
 renderLoginScreen();
 return;
@@ -969,216 +834,6 @@ loadInboxMessages();
 
 }
 
-if(page === "discussions"){
-
-document.getElementById("content").innerHTML = `
-<h2>Chat Room</h2>
-<p>Open command chat room for all members. Messages refresh automatically.</p>
-
-<div class="discussion-chat-shell" style="margin-top:10px;">
-  <div id="discussionMessages" class="discussion-chat-thread">Loading discussions...</div>
-  <div class="discussion-chat-compose">
-    <textarea id="discussionText" rows="2" placeholder="Type a message and press Enter to send" style="width:100%"></textarea>
-    <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
-      <button id="postDiscussionBtn">Send</button>
-      <button id="refreshDiscussionBtn">Refresh</button>
-    </div>
-  </div>
-</div>
-
-<pre id="discussionStatus" style="margin-top:10px;white-space:pre-wrap;background:rgba(0,0,0,.2);padding:10px;border:1px solid rgba(255,255,255,.2)">Connecting to discussion feed...</pre>
-`;
-
-const postBtn = document.getElementById('postDiscussionBtn');
-if (postBtn) postBtn.addEventListener('click', postDiscussionMessage);
-const refreshBtn = document.getElementById('refreshDiscussionBtn');
-if (refreshBtn) refreshBtn.addEventListener('click', loadDiscussionMessages);
-const input = document.getElementById('discussionText');
-if (input) {
-  input.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault();
-      postDiscussionMessage();
-    }
-  });
-}
-loadDiscussionMessages();
-startDiscussionLiveRefresh();
-
-}
-
-if(page === "adminchat"){
-
-if(!hasAdminAccessClient(currentUser)){
-loadPage('dashboard');
-return;
-}
-
-document.getElementById("content").innerHTML = `
-<h2>Admin Chat</h2>
-<p>Private internal channel for admins.</p>
-
-<div style="margin-top:10px;border:1px solid rgba(255,255,255,.2);padding:10px;background:rgba(0,0,0,.15)">
-  <textarea id="adminChatText" rows="3" placeholder="Send admin-only message" style="width:100%"></textarea>
-  <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
-    <button id="postAdminChatBtn">Send</button>
-    <button id="refreshAdminChatBtn">Refresh</button>
-  </div>
-</div>
-
-<pre id="adminChatStatus" style="margin-top:10px;white-space:pre-wrap;background:rgba(0,0,0,.2);padding:10px;border:1px solid rgba(255,255,255,.2)">Loading admin chat...</pre>
-
-<div style="margin-top:10px;overflow:auto">
-  <table id="adminChatTable">
-    <thead><tr><th>When</th><th>Author</th><th>Message</th><th>Action</th></tr></thead>
-    <tbody></tbody>
-  </table>
-</div>
-`;
-
-const postBtn = document.getElementById('postAdminChatBtn');
-if (postBtn) postBtn.addEventListener('click', postAdminChatMessage);
-const refreshBtn = document.getElementById('refreshAdminChatBtn');
-if (refreshBtn) refreshBtn.addEventListener('click', loadAdminChatMessages);
-loadAdminChatMessages();
-
-}
-
-if(page === "calendar"){
-
-document.getElementById("content").innerHTML = `
-<h2>Event Calendar</h2>
-<p>Schedule command events and reminders.</p>
-
-<div style="margin-top:10px;border:1px solid rgba(255,255,255,.2);padding:10px;background:rgba(0,0,0,.15)">
-  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-    <input id="calendarDate" type="date">
-    <input id="calendarTime" type="time" value="09:00">
-    <select id="calendarEventTimezone" style="min-width:220px"></select>
-    <input id="calendarTitle" type="text" placeholder="Event title" style="min-width:220px;flex:1">
-  </div>
-  <textarea id="calendarNote" rows="2" placeholder="Optional notes" style="width:100%;margin-top:8px"></textarea>
-  <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
-    <button id="calendarAddBtn">Add Event</button>
-    <button id="calendarRefreshBtn">Refresh</button>
-  </div>
-</div>
-
-<pre id="calendarStatus" style="margin-top:10px;white-space:pre-wrap;background:rgba(0,0,0,.2);padding:10px;border:1px solid rgba(255,255,255,.2)">Loading events...</pre>
-
-<div style="margin-top:10px;overflow:auto">
-  <table id="calendarTable">
-    <thead><tr><th>Date</th><th>Time</th><th>Event</th><th>Notes</th><th>By</th><th>Source TZ</th><th>Action</th></tr></thead>
-    <tbody></tbody>
-  </table>
-</div>
-`;
-
-initCalendarTimezoneSelectors();
-
-const addBtn = document.getElementById('calendarAddBtn');
-if (addBtn) addBtn.addEventListener('click', addCalendarEvent);
-const refreshBtn = document.getElementById('calendarRefreshBtn');
-if (refreshBtn) refreshBtn.addEventListener('click', loadCalendarEvents);
-loadCalendarEvents();
-
-}
-
-if(page === "promotion-recommendations"){
-
-if(!hasLeadershipAccessClient(currentUser)){
-loadPage('dashboard');
-return;
-}
-
-document.getElementById("content").innerHTML = `
-<h2>Promotion Recommendations</h2>
-<p>Submit a recommendation for High Command review.</p>
-
-<div style="margin-top:10px;border:1px solid rgba(255,255,255,.2);padding:10px;background:rgba(0,0,0,.15)">
-  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-    <select id="promotionOfficerSelect" style="min-width:300px;flex:1"></select>
-    <select id="promotionSuggestedRank" style="min-width:220px;">
-      <option value="">Suggested Rank...</option>
-      <option value="Officer">Officer</option>
-      <option value="Senior Officer">Senior Officer</option>
-      <option value="Corpral">Corpral</option>
-      <option value="Sergeant">Sergeant</option>
-      <option value="Lieutenant">Lieutenant</option>
-      <option value="Captain">Captain</option>
-      <option value="Commander">Commander</option>
-      <option value="Deputy Chief">Deputy Chief</option>
-      <option value="Assistant Chief">Assistant Chief</option>
-      <option value="Chief">Chief</option>
-    </select>
-  </div>
-  <textarea id="promotionNotes" rows="4" placeholder="Recommendation notes and reasons" style="width:100%;margin-top:8px"></textarea>
-  <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
-    <button id="submitPromotionRecBtn">Submit Recommendation</button>
-    <button id="refreshPromotionRecBtn">Refresh</button>
-  </div>
-</div>
-
-<pre id="promotionRecStatus" style="margin-top:10px;white-space:pre-wrap;background:rgba(0,0,0,.2);padding:10px;border:1px solid rgba(255,255,255,.2)">Loading recommendations...</pre>
-
-<div style="margin-top:10px;overflow:auto">
-  <table id="promotionRecTable">
-    <thead><tr><th>Officer</th><th>Current Rank</th><th>Suggested Rank</th><th>Submitted By</th><th>Date</th><th>Status</th></tr></thead>
-    <tbody></tbody>
-  </table>
-</div>
-`;
-
-const submitBtn = document.getElementById('submitPromotionRecBtn');
-if (submitBtn) submitBtn.addEventListener('click', submitPromotionRecommendation);
-const refreshBtn = document.getElementById('refreshPromotionRecBtn');
-if (refreshBtn) refreshBtn.addEventListener('click', loadPromotionRecommendations);
-
-loadPromotionOfficerOptions();
-loadPromotionRecommendations();
-
-}
-
-if(page === "high-command-approval"){
-
-if(!hasLeadershipAccessClient(currentUser)){
-loadPage('dashboard');
-return;
-}
-
-document.getElementById("content").innerHTML = `
-<h2>High Command Approval</h2>
-<p>Review, approve, deny, or delete promotion recommendations.</p>
-
-<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-  <label>Status</label>
-  <select id="promotionApprovalStatusFilter">
-    <option value="under_review">Under Review</option>
-    <option value="all">All</option>
-    <option value="approved">Approved</option>
-    <option value="denied">Denied</option>
-  </select>
-  <button id="refreshPromotionApprovalBtn">Refresh</button>
-</div>
-
-<pre id="promotionApprovalStatus" style="margin-top:10px;white-space:pre-wrap;background:rgba(0,0,0,.2);padding:10px;border:1px solid rgba(255,255,255,.2)">Loading approval queue...</pre>
-
-<div style="margin-top:10px;overflow:auto">
-  <table id="promotionApprovalTable">
-    <thead><tr><th>Officer</th><th>Current</th><th>Suggested</th><th>Notes</th><th>Submitted By</th><th>Date</th><th>Status</th><th>Actions</th></tr></thead>
-    <tbody></tbody>
-  </table>
-</div>
-`;
-
-const refreshBtn = document.getElementById('refreshPromotionApprovalBtn');
-if (refreshBtn) refreshBtn.addEventListener('click', loadPromotionApprovalQueue);
-const statusFilter = document.getElementById('promotionApprovalStatusFilter');
-if (statusFilter) statusFilter.addEventListener('change', loadPromotionApprovalQueue);
-loadPromotionApprovalQueue();
-
-}
-
 /* FTO */
 
 if(page === "fto"){
@@ -1228,12 +883,13 @@ if (addBtn) addBtn.addEventListener('click', addFtoOfficer);
 const refreshBtn = document.getElementById('refreshFtoBtn');
 if (refreshBtn) refreshBtn.addEventListener('click', loadFtoPage);
 
+loadFtoPage();
 if (isLoggedIn()) {
   ensureDataTabsSynced()
     .then(() => loadFtoPage())
-    .catch(() => loadFtoPage());
-} else {
-  loadFtoPage();
+    .catch(() => {
+      // Keep current page state if auto-sync fails.
+    });
 }
 
 }
@@ -1321,8 +977,14 @@ ${canAdminReset ? `
   <button id="adminResetPasswordBtn" style="margin-top:8px;">Reset User Password</button>
 </div>
 ` : ''}
+
+<div style="margin-top:12px;">
+  <button id="logoutBtn">Logout</button>
+</div>
 <pre id="accountStatus" style="margin-top:14px;white-space:pre-wrap;background:rgba(0,0,0,.2);padding:10px;border:1px solid rgba(255,255,255,.2)">Logged in.</pre>
 `;
+
+document.getElementById('logoutBtn').addEventListener('click', logoutAccount);
 document.getElementById('changePasswordBtn').addEventListener('click', changePassword);
 
 const adminResetBtn = document.getElementById('adminResetPasswordBtn');
@@ -1959,12 +1621,10 @@ async function loadFtoList() {
   const body = document.querySelector('#ftoTable tbody');
   if (!body) return;
 
-  const currentLoadToken = ++ftoListLoadToken;
   body.innerHTML = '';
   try {
     const response = await authFetch('/api/fto');
     const data = await response.json();
-    if (currentLoadToken !== ftoListLoadToken) return;
     if (!response.ok) throw new Error(data.error || 'Failed to load FTO list');
 
     const items = Array.isArray(data.items) ? data.items : [];
@@ -2029,181 +1689,6 @@ async function removeFtoOfficer(officerId) {
     await loadFtoList();
   } catch (err) {
     if (status) status.textContent = 'Remove failed: ' + err.message;
-  }
-}
-
-async function loadPromotionOfficerOptions() {
-  const select = document.getElementById('promotionOfficerSelect');
-  if (!select) return;
-  select.innerHTML = '<option value="">Loading roster...</option>';
-  try {
-    const response = await fetch('/api/roster');
-    const data = await response.json();
-    if (!response.ok) throw new Error('Failed to load roster');
-    const rows = Array.isArray(data) ? data : [];
-    const options = rows.map((item) => {
-      const id = pickOfficerField(item, ['ID', 'id', 'Officer_ID', 'officer_id']);
-      const name = pickOfficerField(item, ['Name', 'name', 'RP_Name', 'rp_name', 'Officer_Name', 'officer_name']);
-      const rank = pickOfficerField(item, ['Rank', 'rank']) || '-';
-      const callsign = pickOfficerField(item, ['Callsign', 'callsign', 'Call_Sign', 'call_sign']);
-      if (!id) return null;
-      return {
-        id,
-        name: name || '(No Name)',
-        rank,
-        label: (rank ? rank + ' ' : '') + (name || '(No Name)') + (callsign ? ' | ' + callsign : '')
-      };
-    }).filter(Boolean).sort((a, b) => a.label.localeCompare(b.label));
-
-    select.innerHTML = '<option value="">Select officer...</option>';
-    options.forEach((o) => {
-      const opt = document.createElement('option');
-      opt.value = o.id;
-      opt.textContent = o.label;
-      opt.dataset.officerName = o.name;
-      opt.dataset.currentRank = o.rank;
-      select.appendChild(opt);
-    });
-  } catch (err) {
-    select.innerHTML = '<option value="">Roster unavailable</option>';
-  }
-}
-
-async function submitPromotionRecommendation() {
-  const select = document.getElementById('promotionOfficerSelect');
-  const rankEl = document.getElementById('promotionSuggestedRank');
-  const notesEl = document.getElementById('promotionNotes');
-  const status = document.getElementById('promotionRecStatus');
-  const officerId = String((select && select.value) || '').trim();
-  const option = select && select.options ? select.options[select.selectedIndex] : null;
-  const officerName = String((option && option.dataset && option.dataset.officerName) || '').trim();
-  const currentRank = String((option && option.dataset && option.dataset.currentRank) || '').trim();
-  const suggestedRank = String((rankEl && rankEl.value) || '').trim();
-  const notes = String((notesEl && notesEl.value) || '').trim();
-
-  if (!officerId || !officerName || !suggestedRank || !notes) {
-    if (status) status.textContent = 'Select an officer, choose a suggested rank, and enter notes.';
-    return;
-  }
-
-  try {
-    const response = await authFetch('/api/promotions/recommendations', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ officerId, officerName, currentRank, suggestedRank, notes })
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Submit failed');
-    if (notesEl) notesEl.value = '';
-    if (status) status.textContent = 'Recommendation submitted and marked under review.';
-    await loadPromotionRecommendations();
-  } catch (err) {
-    if (status) status.textContent = 'Submit failed: ' + err.message;
-  }
-}
-
-async function loadPromotionRecommendations() {
-  const body = document.querySelector('#promotionRecTable tbody');
-  const status = document.getElementById('promotionRecStatus');
-  if (!body) return;
-  body.innerHTML = '<tr><td colspan="6">Loading...</td></tr>';
-  try {
-    const response = await authFetch('/api/promotions/recommendations?status=all');
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Failed to load recommendations');
-    const rows = Array.isArray(data.items) ? data.items : [];
-    if (!rows.length) {
-      body.innerHTML = '<tr><td colspan="6">No recommendations submitted yet.</td></tr>';
-      if (status) status.textContent = 'No recommendations submitted yet.';
-      return;
-    }
-    body.innerHTML = rows.map((r) => {
-      const statusClass = 'status-' + sanitizeName(r.status || 'under_review');
-      return '<tr>' +
-        '<td>' + escapeHtml(r.officerName || '-') + '</td>' +
-        '<td>' + escapeHtml(r.currentRank || '-') + '</td>' +
-        '<td>' + escapeHtml(r.suggestedRank || '-') + '</td>' +
-        '<td>' + escapeHtml(r.submittedBy || '-') + '</td>' +
-        '<td>' + escapeHtml(formatDateTime(r.createdAt || '')) + '</td>' +
-        '<td><span class="status-pill ' + statusClass + '">' + escapeHtml(r.status || '-') + '</span></td>' +
-      '</tr>';
-    }).join('');
-    if (status) status.textContent = 'Recommendations: ' + rows.length;
-  } catch (err) {
-    body.innerHTML = '<tr><td colspan="6">' + escapeHtml(err.message) + '</td></tr>';
-    if (status) status.textContent = 'Recommendation load failed: ' + err.message;
-  }
-}
-
-async function loadPromotionApprovalQueue() {
-  const body = document.querySelector('#promotionApprovalTable tbody');
-  const status = document.getElementById('promotionApprovalStatus');
-  const statusFilter = String((document.getElementById('promotionApprovalStatusFilter') || {}).value || 'under_review').trim();
-  if (!body) return;
-  body.innerHTML = '<tr><td colspan="8">Loading...</td></tr>';
-  try {
-    const response = await authFetch('/api/promotions/recommendations?status=' + encodeURIComponent(statusFilter));
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Failed to load approval queue');
-    const rows = Array.isArray(data.items) ? data.items : [];
-    if (!rows.length) {
-      body.innerHTML = '<tr><td colspan="8">No recommendations in this queue.</td></tr>';
-      if (status) status.textContent = 'No recommendations in queue.';
-      return;
-    }
-    body.innerHTML = rows.map((r) => {
-      const id = String(r.id || '').replace(/'/g, "\\'");
-      const statusClass = 'status-' + sanitizeName(r.status || 'under_review');
-      return '<tr>' +
-        '<td>' + escapeHtml(r.officerName || '-') + '</td>' +
-        '<td>' + escapeHtml(r.currentRank || '-') + '</td>' +
-        '<td>' + escapeHtml(r.suggestedRank || '-') + '</td>' +
-        '<td title="' + escapeHtml(r.notes || '-') + '">' + escapeHtml(r.notes || '-') + '</td>' +
-        '<td>' + escapeHtml(r.submittedBy || '-') + '</td>' +
-        '<td>' + escapeHtml(formatDateTime(r.createdAt || '')) + '</td>' +
-        '<td><span class="status-pill ' + statusClass + '">' + escapeHtml(r.status || '-') + '</span></td>' +
-        '<td class="approval-actions-cell"><div class="approval-actions">' +
-          '<button onclick="setPromotionRecommendationStatus(\'' + id + '\',\'approved\')">Approve</button> ' +
-          '<button onclick="setPromotionRecommendationStatus(\'' + id + '\',\'denied\')">Deny</button> ' +
-          '<button onclick="deletePromotionRecommendation(\'' + id + '\')">Delete</button>' +
-        '</div></td>' +
-      '</tr>';
-    }).join('');
-    if (status) status.textContent = 'Queue items: ' + rows.length;
-  } catch (err) {
-    body.innerHTML = '<tr><td colspan="8">' + escapeHtml(err.message) + '</td></tr>';
-    if (status) status.textContent = 'Approval queue load failed: ' + err.message;
-  }
-}
-
-async function setPromotionRecommendationStatus(id, nextStatus) {
-  try {
-    const response = await authFetch('/api/promotions/recommendations/' + encodeURIComponent(String(id || '')) + '/status', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: nextStatus })
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Status update failed');
-    await loadPromotionApprovalQueue();
-    const recStatus = document.getElementById('promotionRecStatus');
-    if (recStatus) await loadPromotionRecommendations();
-  } catch (err) {
-    alert('Status update failed: ' + err.message);
-  }
-}
-
-async function deletePromotionRecommendation(id) {
-  if (!confirm('Delete this promotion recommendation?')) return;
-  try {
-    const response = await authFetch('/api/promotions/recommendations/' + encodeURIComponent(String(id || '')), { method: 'DELETE' });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Delete failed');
-    await loadPromotionApprovalQueue();
-    const recStatus = document.getElementById('promotionRecStatus');
-    if (recStatus) await loadPromotionRecommendations();
-  } catch (err) {
-    alert('Delete failed: ' + err.message);
   }
 }
 
@@ -2281,8 +1766,9 @@ async function loginAccount() {
     setAuthToken(data.token || '');
     await refreshAuthSession();
     loadPage('dashboard');
-    // Removed welcome message and alert after login
-    if (status) status.textContent = '';
+    const welcome = 'Login successful. Welcome ' + formatUserDisplayName(currentUser) + '.';
+    if (status) status.textContent = welcome;
+    alert(welcome);
   } catch (err) {
     if (status) status.textContent = 'Login failed: ' + err.message;
   }
@@ -2446,20 +1932,17 @@ function renderReportProfile(item) {
   };
 
   const canApprove = reportCanBeApproved(item);
-  const canDelete = !!currentUser && hasLeadershipAccessClient(currentUser);
   const actionsHtml = canApprove
     ? '<button id="reportApproveBtn">Approve</button> ' +
       '<button id="reportDenyBtn">Deny</button> ' +
       '<button id="reportResetBtn">Reset</button>'
     : '<span style="opacity:.85">No approval actions for this report type.</span>';
-  const deleteHtml = canDelete ? '<button id="reportDeleteBtn">Delete Report</button>' : '';
 
   document.getElementById('content').innerHTML = `
     <h2>Report Profile</h2>
     <div style="margin:8px 0 16px 0;display:flex;gap:8px;flex-wrap:wrap;">
       <button id="reportBackBtn">Back to Reports</button>
       ${actionsHtml}
-      ${deleteHtml}
     </div>
 
     <p><b>Type:</b> ${escapeHtml(item.type || '-')}</p>
@@ -2494,14 +1977,6 @@ function renderReportProfile(item) {
     });
     if (resetBtn) resetBtn.addEventListener('click', async () => {
       await setReportApproval(item.id, 'pending');
-      loadPage('reports');
-    });
-  }
-
-  if (canDelete) {
-    const deleteBtn = document.getElementById('reportDeleteBtn');
-    if (deleteBtn) deleteBtn.addEventListener('click', async () => {
-      await deleteReportItem(item.id);
       loadPage('reports');
     });
   }
@@ -2541,14 +2016,12 @@ async function loadReportItems() {
 
     tableBody.innerHTML = filteredItems.map((item) => {
       const canApprove = reportCanBeApproved(item);
-      const canDelete = !!currentUser && hasLeadershipAccessClient(currentUser);
       const statusText = escapeHtml(item.approvalStatus || 'pending');
       const actionButtons = canApprove
         ? '<button onclick="setReportApproval(\'' + escapeHtml(item.id) + '\',\'approved\')">Approve</button> ' +
           '<button onclick="setReportApproval(\'' + escapeHtml(item.id) + '\',\'denied\')">Deny</button> ' +
           '<button onclick="setReportApproval(\'' + escapeHtml(item.id) + '\',\'pending\')">Reset</button>'
         : '-';
-      const deleteButton = canDelete ? (' <button onclick="deleteReportItem(\'' + escapeHtml(item.id) + '\')">Delete</button>') : '';
 
       return '<tr>' +
         '<td>' + escapeHtml(item.type) + '</td>' +
@@ -2559,7 +2032,7 @@ async function loadReportItems() {
         '<td>' + statusText + '</td>' +
         '<td>' + escapeHtml(item.approvedBy || '-') + '</td>' +
         '<td>' + escapeHtml(formatDateTime(item.approvedAt || '')) + '</td>' +
-        '<td>' + actionButtons + deleteButton + '</td>' +
+        '<td>' + actionButtons + '</td>' +
         '</tr>';
     }).join('');
 
@@ -2589,354 +2062,6 @@ async function setReportApproval(reportId, status) {
     await loadReportItems();
   } catch (err) {
     alert('Approval update failed: ' + err.message);
-  }
-}
-
-async function deleteReportItem(reportId) {
-  const id = String(reportId || '').trim();
-  if (!id) return;
-  if (!confirm('Delete this report row from source data?')) return;
-  try {
-    const response = await authFetch('/api/reports/' + encodeURIComponent(id), { method: 'DELETE' });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Delete failed');
-    await loadReportsSummary();
-    await loadReportItems();
-  } catch (err) {
-    alert('Report delete failed: ' + err.message);
-  }
-}
-
-async function loadDiscussionMessages(options = {}) {
-  const opts = options || {};
-  const body = document.querySelector('#discussionTable tbody');
-  const thread = document.getElementById('discussionMessages');
-  const status = document.getElementById('discussionStatus');
-  if (!body && !thread) return;
-
-  let wasNearBottom = true;
-  if (thread) {
-    const distanceToBottom = thread.scrollHeight - thread.scrollTop - thread.clientHeight;
-    wasNearBottom = distanceToBottom < 80;
-    if (!opts.silent) thread.innerHTML = '<div class="discussion-chat-empty">Loading...</div>';
-  } else if (body && !opts.silent) {
-    body.innerHTML = '<tr><td colspan="4">Loading...</td></tr>';
-  }
-  try {
-    const response = await authFetch('/api/discussions/messages?limit=250');
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Failed to load discussion board');
-    const rows = Array.isArray(data.items) ? data.items : [];
-    if (!rows.length) {
-      if (thread) {
-        thread.innerHTML = '<div class="discussion-chat-empty">No discussion messages yet.</div>';
-      } else if (body) {
-        body.innerHTML = '<tr><td colspan="4">No discussion messages yet.</td></tr>';
-      }
-      if (status) status.textContent = 'No discussion messages yet.';
-      return;
-    }
-    if (thread) {
-      const me = normalizeEmailClient(currentUser && currentUser.email);
-      thread.innerHTML = rows.map((m) => {
-        const authorEmail = normalizeEmailClient(m.authorEmail);
-        const isMine = !!me && me === authorEmail;
-        const canDelete = hasLeadershipAccessClient(currentUser) || isMine;
-        const deleteBtn = canDelete
-          ? ('<button class="discussion-delete-btn" onclick="deleteDiscussionMessage(\'' + escapeHtml(m.id) + '\')">Delete</button>')
-          : '';
-        return '<div class="discussion-chat-message ' + (isMine ? 'mine' : 'other') + '">' +
-          '<div class="discussion-chat-meta">' +
-            '<span>' + escapeHtml(m.author || 'Officer') + '</span>' +
-            '<span>' + escapeHtml(formatDateTime(m.createdAt || '')) + '</span>' +
-          '</div>' +
-          '<div class="discussion-chat-text">' + escapeHtml(m.text || '-') + '</div>' +
-          (deleteBtn ? ('<div class="discussion-chat-actions">' + deleteBtn + '</div>') : '') +
-        '</div>';
-      }).join('');
-      if (wasNearBottom || !opts.preserveScroll) {
-        thread.scrollTop = thread.scrollHeight;
-      }
-    } else if (body) {
-      body.innerHTML = rows.map((m) => {
-        const canDelete = hasLeadershipAccessClient(currentUser) || normalizeEmailClient(currentUser && currentUser.email) === normalizeEmailClient(m.authorEmail);
-        const action = canDelete ? ('<button onclick="deleteDiscussionMessage(\'' + escapeHtml(m.id) + '\')">Delete</button>') : '-';
-        return '<tr>' +
-          '<td>' + escapeHtml(formatDateTime(m.createdAt || '')) + '</td>' +
-          '<td>' + escapeHtml(m.author || '-') + '</td>' +
-          '<td>' + escapeHtml(m.text || '-') + '</td>' +
-          '<td>' + action + '</td>' +
-        '</tr>';
-      }).join('');
-    }
-    if (status) status.textContent = 'Discussion messages: ' + rows.length;
-  } catch (err) {
-    if (thread) {
-      thread.innerHTML = '<div class="discussion-chat-empty">' + escapeHtml(err.message) + '</div>';
-    } else if (body) {
-      body.innerHTML = '<tr><td colspan="4">' + escapeHtml(err.message) + '</td></tr>';
-    }
-    if (status) status.textContent = 'Discussion load failed: ' + err.message;
-  }
-}
-
-async function postDiscussionMessage() {
-  const input = document.getElementById('discussionText');
-  const status = document.getElementById('discussionStatus');
-  const text = String((input && input.value) || '').trim();
-  if (!text) {
-    if (status) status.textContent = 'Enter a message first.';
-    return;
-  }
-  try {
-    const response = await authFetch('/api/discussions/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text })
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Post failed');
-    if (input) input.value = '';
-    await loadDiscussionMessages({ preserveScroll: false });
-  } catch (err) {
-    if (status) status.textContent = 'Post failed: ' + err.message;
-  }
-}
-
-async function deleteDiscussionMessage(id) {
-  try {
-    const response = await authFetch('/api/discussions/messages/' + encodeURIComponent(String(id || '')), { method: 'DELETE' });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Delete failed');
-    await loadDiscussionMessages({ preserveScroll: true });
-  } catch (err) {
-    alert('Discussion delete failed: ' + err.message);
-  }
-}
-
-async function loadAdminChatMessages() {
-  const body = document.querySelector('#adminChatTable tbody');
-  const status = document.getElementById('adminChatStatus');
-  if (!body) return;
-  body.innerHTML = '<tr><td colspan="4">Loading...</td></tr>';
-  try {
-    const response = await authFetch('/api/admin-chat/messages?limit=250');
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Failed to load admin chat');
-    const rows = Array.isArray(data.items) ? data.items : [];
-    if (!rows.length) {
-      body.innerHTML = '<tr><td colspan="4">No admin chat messages yet.</td></tr>';
-      if (status) status.textContent = 'No admin chat messages yet.';
-      return;
-    }
-    body.innerHTML = rows.map((m) => {
-      return '<tr>' +
-        '<td>' + escapeHtml(formatDateTime(m.createdAt || '')) + '</td>' +
-        '<td>' + escapeHtml(m.author || '-') + '</td>' +
-        '<td>' + escapeHtml(m.text || '-') + '</td>' +
-        '<td><button onclick="deleteAdminChatMessage(\'' + escapeHtml(m.id) + '\')">Delete</button></td>' +
-      '</tr>';
-    }).join('');
-    if (status) status.textContent = 'Admin chat messages: ' + rows.length;
-  } catch (err) {
-    body.innerHTML = '<tr><td colspan="4">' + escapeHtml(err.message) + '</td></tr>';
-    if (status) status.textContent = 'Admin chat load failed: ' + err.message;
-  }
-}
-
-async function postAdminChatMessage() {
-  const input = document.getElementById('adminChatText');
-  const status = document.getElementById('adminChatStatus');
-  const text = String((input && input.value) || '').trim();
-  if (!text) {
-    if (status) status.textContent = 'Enter a message first.';
-    return;
-  }
-  try {
-    const response = await authFetch('/api/admin-chat/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text })
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Send failed');
-    if (input) input.value = '';
-    await loadAdminChatMessages();
-  } catch (err) {
-    if (status) status.textContent = 'Send failed: ' + err.message;
-  }
-}
-
-async function deleteAdminChatMessage(id) {
-  try {
-    const response = await authFetch('/api/admin-chat/messages/' + encodeURIComponent(String(id || '')), { method: 'DELETE' });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Delete failed');
-    await loadAdminChatMessages();
-  } catch (err) {
-    alert('Admin chat delete failed: ' + err.message);
-  }
-}
-
-async function loadCalendarEvents() {
-  const body = document.querySelector('#calendarTable tbody');
-  const status = document.getElementById('calendarStatus');
-  if (!body) return;
-  body.innerHTML = '<tr><td colspan="7">Loading...</td></tr>';
-  try {
-    const response = await authFetch('/api/calendar/events');
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Failed to load calendar');
-    const rows = Array.isArray(data.items) ? data.items : [];
-    const viewTz = getCalendarViewTimezone();
-    if (!rows.length) {
-      body.innerHTML = '<tr><td colspan="7">No events scheduled.</td></tr>';
-      if (status) status.textContent = 'No events scheduled.';
-      return;
-    }
-    body.innerHTML = rows.map((ev) => {
-      const canDelete = hasLeadershipAccessClient(currentUser) || normalizeEmailClient(currentUser && currentUser.email) === normalizeEmailClient(ev.createdByEmail);
-      const action = canDelete ? ('<button onclick="deleteCalendarEvent(\'' + escapeHtml(ev.id) + '\')">Delete</button>') : '-';
-      const when = formatCalendarEventForTimezone(ev, viewTz);
-      return '<tr>' +
-        '<td>' + escapeHtml(when.date) + '</td>' +
-        '<td>' + escapeHtml(when.time) + '</td>' +
-        '<td>' + escapeHtml(ev.title || '-') + '</td>' +
-        '<td>' + escapeHtml(ev.note || '-') + '</td>' +
-        '<td>' + escapeHtml(ev.createdBy || '-') + '</td>' +
-        '<td>' + escapeHtml(ev.timezone || DEFAULT_CALENDAR_TIMEZONE) + '</td>' +
-        '<td>' + action + '</td>' +
-      '</tr>';
-    }).join('');
-    if (status) status.textContent = 'Scheduled events: ' + rows.length;
-  } catch (err) {
-    body.innerHTML = '<tr><td colspan="7">' + escapeHtml(err.message) + '</td></tr>';
-    if (status) status.textContent = 'Calendar load failed: ' + err.message;
-  }
-}
-
-async function addCalendarEvent() {
-  const date = String((document.getElementById('calendarDate') || {}).value || '').trim();
-  const time = String((document.getElementById('calendarTime') || {}).value || '').trim();
-  const timezone = String((document.getElementById('calendarEventTimezone') || {}).value || '').trim() || DEFAULT_CALENDAR_TIMEZONE;
-  const title = String((document.getElementById('calendarTitle') || {}).value || '').trim();
-  const note = String((document.getElementById('calendarNote') || {}).value || '').trim();
-  const status = document.getElementById('calendarStatus');
-  try {
-    const response = await authFetch('/api/calendar/events', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ date, time, timezone, title, note })
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Add event failed');
-    const titleEl = document.getElementById('calendarTitle');
-    const noteEl = document.getElementById('calendarNote');
-    if (titleEl) titleEl.value = '';
-    if (noteEl) noteEl.value = '';
-    await loadCalendarEvents();
-    await checkCalendarReminders();
-  } catch (err) {
-    if (status) status.textContent = 'Add event failed: ' + err.message;
-  }
-}
-
-function getCalendarViewTimezone() {
-  let tz = DEFAULT_CALENDAR_TIMEZONE;
-  try {
-    tz = String(localStorage.getItem(CALENDAR_VIEW_TIMEZONE_KEY) || DEFAULT_CALENDAR_TIMEZONE);
-  } catch (e) {
-    tz = DEFAULT_CALENDAR_TIMEZONE;
-  }
-  if (!isValidTimeZoneClient(tz)) return DEFAULT_CALENDAR_TIMEZONE;
-  return tz;
-}
-
-function initCalendarTimezoneSelectors() {
-  const eventTzEl = document.getElementById('calendarEventTimezone');
-  const viewTzEl = document.getElementById('calendarViewTimezone');
-  const optionsHtml = CALENDAR_TIMEZONE_OPTIONS.map((opt) => (
-    '<option value="' + escapeHtml(opt.value) + '">' + escapeHtml(opt.label) + '</option>'
-  )).join('');
-
-  if (eventTzEl) {
-    eventTzEl.innerHTML = optionsHtml;
-    eventTzEl.value = DEFAULT_CALENDAR_TIMEZONE;
-  }
-  if (viewTzEl) {
-    viewTzEl.innerHTML = optionsHtml;
-    viewTzEl.value = getCalendarViewTimezone();
-  }
-}
-
-function isValidTimeZoneClient(timeZone) {
-  try {
-    Intl.DateTimeFormat('en-US', { timeZone: String(timeZone || '') }).format(new Date());
-    return true;
-  } catch (e) {
-    return false;
-  }
-}
-
-function formatCalendarEventForTimezone(ev, viewTimeZone) {
-  const dateRaw = String(ev && ev.date || '').trim();
-  const timeRaw = String(ev && ev.time || '').trim();
-  const tz = isValidTimeZoneClient(viewTimeZone) ? viewTimeZone : DEFAULT_CALENDAR_TIMEZONE;
-  const utcAt = String(ev && ev.utcAt || '').trim();
-  if (!utcAt) return { date: dateRaw || '-', time: timeRaw || '-' };
-  const d = new Date(utcAt);
-  if (Number.isNaN(d.getTime())) return { date: dateRaw || '-', time: timeRaw || '-' };
-
-  const dateText = new Intl.DateTimeFormat('en-US', {
-    timeZone: tz,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit'
-  }).format(d);
-  const timeText = new Intl.DateTimeFormat('en-US', {
-    timeZone: tz,
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true
-  }).format(d);
-  return { date: dateText, time: timeText };
-}
-
-async function deleteCalendarEvent(id) {
-  try {
-    const response = await authFetch('/api/calendar/events/' + encodeURIComponent(String(id || '')), { method: 'DELETE' });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Delete failed');
-    await loadCalendarEvents();
-  } catch (err) {
-    alert('Calendar delete failed: ' + err.message);
-  }
-}
-
-async function checkCalendarReminders() {
-  if (!isLoggedIn()) return;
-  const key = 'fwpd_calendar_reminded_ids';
-  let reminded = [];
-  try {
-    reminded = JSON.parse(sessionStorage.getItem(key) || '[]');
-    if (!Array.isArray(reminded)) reminded = [];
-  } catch (e) {
-    reminded = [];
-  }
-
-  try {
-    const response = await authFetch('/api/calendar/reminders?windowHours=24');
-    const data = await response.json();
-    if (!response.ok) return;
-    const items = Array.isArray(data.items) ? data.items : [];
-    const unseen = items.filter((ev) => !reminded.includes(String(ev.id || '')));
-    if (!unseen.length) return;
-    const lines = unseen.slice(0, 3).map((ev) => (ev.date || '?') + ' ' + (ev.time || '') + ' - ' + (ev.title || 'Event'));
-    alert('Upcoming event reminder:\n' + lines.join('\n'));
-    reminded = reminded.concat(unseen.map((ev) => String(ev.id || '')));
-    sessionStorage.setItem(key, JSON.stringify(Array.from(new Set(reminded)).slice(-300)));
-  } catch (e) {
-    // Silent by design.
   }
 }
 

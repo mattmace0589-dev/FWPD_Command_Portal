@@ -1,31 +1,8 @@
-// Global process exit/error handlers for Render troubleshooting
-process.on('exit', (code) => {
-  console.error('[EXIT] Process exited with code:', code);
-});
-process.on('uncaughtException', (err) => {
-  console.error('[FATAL] Uncaught Exception:', err);
-  process.exit(1);
-});
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('[FATAL] Unhandled Rejection:', reason);
-  process.exit(1);
-});
-// Global error handlers to catch fatal errors
-process.on('uncaughtException', function (err) {
-  console.error('Uncaught Exception:', err);
-});
-process.on('unhandledRejection', function (reason, promise) {
-  console.error('Unhandled Rejection:', reason);
-});
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const cors = require('cors');
 const crypto = require('crypto');
-// Utility to sanitize tab names (removes unwanted characters, trims whitespace)
-function sanitizeName(name) {
-  return String(name || '').replace(/[^a-zA-Z0-9_\- ]/g, '').trim();
-}
 let PgPool = null;
 try {
   ({ Pool: PgPool } = require('pg'));
@@ -33,20 +10,7 @@ try {
   PgPool = null;
 }
 
-
-
 const app = express();
-
-// Render health check endpoint (must be after app is defined)
-app.get('/health', (req, res) => {
-  res.json({
-    ok: true,
-    service: 'FWPD Command Portal',
-    time: new Date().toISOString(),
-    bootedAt: BOOTED_AT,
-    uptimeSeconds: Math.floor(process.uptime())
-  });
-});
 const PORT = process.env.PORT || 3000;
 const BOOTED_AT = new Date().toISOString();
 const AUTH_SECRET = String(process.env.AUTH_SECRET || 'fwpd-default-auth-secret-change-me');
@@ -143,55 +107,7 @@ async function dbUpsertPortalSetting(key, value) {
      DO UPDATE SET value_json = EXCLUDED.value_json, updated_at = EXCLUDED.updated_at`,
     [String(key), JSON.stringify(value || {}), new Date().toISOString()]
   );
-  // --- Email setup ---
-  const nodemailer = require('nodemailer');
-  const SMTP_HOST = process.env.SMTP_HOST || '';
-  const SMTP_PORT = process.env.SMTP_PORT || 587;
-  const SMTP_USER = process.env.SMTP_USER || '';
-  const SMTP_PASS = process.env.SMTP_PASS || '';
-  const SMTP_FROM = process.env.SMTP_FROM || 'FWPD Portal <noreply@localhost>';
-
-  let mailTransport = null;
-  if (SMTP_HOST && SMTP_USER && SMTP_PASS) {
-    mailTransport = nodemailer.createTransport({
-      host: SMTP_HOST,
-      port: Number(SMTP_PORT),
-      secure: false,
-      auth: {
-        user: SMTP_USER,
-        pass: SMTP_PASS
-      }
-    });
-  }
-
-  async function sendPasswordResetEmail(to, resetBy, tempPassword) {
-    if (!mailTransport) return;
-    const mailOptions = {
-      from: SMTP_FROM,
-      to,
-      subject: 'Your FWPD Portal password was reset',
-      text: `Hello,
-
-Your FWPD Portal password was reset by: ${resetBy}
-Your new temporary password is: ${tempPassword}
-
-Please log in and change your password as soon as possible.
-
-If you did not request this change, please contact your administrator immediately.
-`
-    };
-    try {
-      await mailTransport.sendMail(mailOptions);
-    } catch (e) {
-      console.error('Failed to send password reset email:', e);
-    }
-  }
-    try {
-      await mailTransport.sendMail(mailOptions);
-    } catch (e) {
-      console.error('Failed to send password reset email:', e);
-    }
-  }
+}
 
 async function initDatabasePersistence() {
   if (!DB_ENABLED) {
@@ -1872,9 +1788,6 @@ app.post('/api/auth/admin-reset-password', requireAuth, async (req, res) => {
     saveJsonFile(USERS_FILE, users);
     await dbUpsertUserRecord(users[idx]);
 
-    // Send email notification to the user
-    await sendPasswordResetEmail(targetEmail, req.auth.email, newPassword);
-
     return res.json({ ok: true, message: 'Password reset for ' + targetEmail + '.' });
   } catch (err) {
     return res.status(500).json({ error: err.message || String(err) });
@@ -2728,7 +2641,6 @@ app.post('/api/reports/:id/approval', requireAuth, (req, res) => {
   }
 });
 
-
 app.delete('/api/reports/:id', requireAuth, (req, res) => {
   try {
     if (!hasLeadershipAccess(req.auth)) {
@@ -2739,40 +2651,36 @@ app.delete('/api/reports/:id', requireAuth, (req, res) => {
     if (!id) return res.status(400).json({ error: 'Report id is required.' });
 
     const built = buildReportItems();
-    const itemsToDelete = built.items.filter((x) => String(x && x.id || '') === id);
-    if (!itemsToDelete.length) return res.status(404).json({ error: 'Report item not found.' });
+    const item = built.items.find((x) => String(x && x.id || '') === id);
+    if (!item) return res.status(404).json({ error: 'Report item not found.' });
 
-    // Remove from all tabs where this report exists
-    let deletedFromTabs = [];
-    for (const item of itemsToDelete) {
-      const rows = readTabRecords(item.sourceTab);
-      if (!Array.isArray(rows) || !rows.length) continue;
-      let deleteIdx = -1;
-      for (let idx = 0; idx < rows.length; idx += 1) {
-        const row = rows[idx] || {};
-        const fingerprint = buildReportFingerprint(row, item.type) || (item.sourceTab + '|' + idx);
-        const candidateId = stableHash(item.sourceTab + '|' + fingerprint);
-        if (candidateId === id) {
-          deleteIdx = idx;
-          break;
-        }
-      }
-      if (deleteIdx >= 0) {
-        const nextRows = rows.slice(0, deleteIdx).concat(rows.slice(deleteIdx + 1));
-        writeTabRecords(item.sourceTab, nextRows);
-        deletedFromTabs.push(item.sourceTab);
+    const rows = readTabRecords(item.sourceTab);
+    if (!Array.isArray(rows) || !rows.length) {
+      return res.status(404).json({ error: 'Source tab rows not found for report.' });
+    }
+
+    let deleteIdx = -1;
+    for (let idx = 0; idx < rows.length; idx += 1) {
+      const row = rows[idx] || {};
+      const fingerprint = buildReportFingerprint(row, item.type) || (item.sourceTab + '|' + idx);
+      const candidateId = stableHash(item.sourceTab + '|' + fingerprint);
+      if (candidateId === id) {
+        deleteIdx = idx;
+        break;
       }
     }
 
-    // Remove from approvals
+    if (deleteIdx < 0) {
+      return res.status(404).json({ error: 'Unable to map report to source row.' });
+    }
+
+    const nextRows = rows.slice(0, deleteIdx).concat(rows.slice(deleteIdx + 1));
+    writeTabRecords(item.sourceTab, nextRows);
+
     const approvals = loadReportApprovals().filter((a) => String(a && a.id || '') !== id);
     saveReportApprovals(approvals);
 
-    if (!deletedFromTabs.length) {
-      return res.status(404).json({ error: 'Unable to map report to any source row.' });
-    }
-
-    return res.json({ ok: true, deletedId: id, deletedFromTabs });
+    return res.json({ ok: true, deletedId: id, sourceTab: item.sourceTab });
   } catch (err) {
     return res.status(500).json({ error: err.message || String(err) });
   }
@@ -3085,16 +2993,24 @@ async function autoSyncSheetsOnStartup() {
 }
 
 async function startServer() {
-
   try {
     await initDatabasePersistence();
-    await autoSyncSheetsOnStartup();
-    await ensureCommandUsersLoaded();
   } catch (err) {
-    // If DB fails, continue with file-based persistence
+    console.error('DB initialization failed. Continuing with file-based persistence only.', err.message || String(err));
   }
+
+  await autoSyncSheetsOnStartup();
+
+  try {
+    const commandUsers = await ensureCommandUsersLoaded();
+    console.log('Command_Users ready:', Array.isArray(commandUsers) ? commandUsers.length : 0, 'records');
+  } catch (err) {
+    console.error('Command_Users warm-load failed:', err.message || String(err));
+  }
+
   app.listen(PORT, () => {
-    // Server started
+    console.log('Server running on http://localhost:' + PORT);
   });
 }
 
+startServer();
