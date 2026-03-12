@@ -1,3 +1,4 @@
+console.log('FWPD Portal: server.js starting...');
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
@@ -3062,6 +3063,7 @@ async function startServer() {
     console.error('Command_Users warm-load failed:', err.message || String(err));
   }
 
+  console.log('FWPD Portal: About to listen on port', PORT);
   app.listen(PORT, () => {
     console.log('Server running on http://localhost:' + PORT);
   });
