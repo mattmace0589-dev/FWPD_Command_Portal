@@ -2281,9 +2281,8 @@ async function loginAccount() {
     setAuthToken(data.token || '');
     await refreshAuthSession();
     loadPage('dashboard');
-    const welcome = 'Login successful. Welcome ' + formatUserDisplayName(currentUser) + '.';
-    if (status) status.textContent = welcome;
-    alert(welcome);
+    // Removed welcome message and alert after login
+    if (status) status.textContent = '';
   } catch (err) {
     if (status) status.textContent = 'Login failed: ' + err.message;
   }
