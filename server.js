@@ -1,3 +1,9 @@
+process.on('exit', (code) => {
+  console.error('Process exit event with code:', code);
+});
+process.on('beforeExit', (code) => {
+  console.error('Process beforeExit event with code:', code);
+});
 process.on('uncaughtException', function (err) {
   console.error('Uncaught Exception:', err);
 });
@@ -3093,6 +3099,8 @@ async function startServer() {
   }
 }
 
-startServer();
+startServer().catch((err) => {
+  console.error('Fatal error in startServer:', err && err.stack ? err.stack : err);
+});
 // Added to fix missing closing brace error
 }
