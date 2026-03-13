@@ -799,7 +799,7 @@ setAuthLockedLayout(false);
 if(page === "dashboard"){
 
 document.getElementById("content").innerHTML = `
-<h2>Command Dashboard</h2>
+<h2>Home</h2>
 
 <div id="welcomeMessage" style="margin-top:2px;margin-bottom:10px;color:#d8f3ff"></div>
 
